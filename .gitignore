@@ -49,13 +49,12 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific
-outputs/*.json
-outputs/*.csv
-outputs/*.xlsx
+outputs/偏好解析结果.json
 *.log
 
 # Keep sample outputs for documentation
 !outputs/sample_*
+!outputs/安排结果_*
 
 # Temporary test files
 temp_*

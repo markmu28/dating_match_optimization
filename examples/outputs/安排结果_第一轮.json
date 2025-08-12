@@ -1,0 +1,199 @@
+{
+  "meta": {
+    "total_groups": 6,
+    "total_score": 42.0,
+    "avg_group_score": 7.0,
+    "total_single_preferences": 17,
+    "total_mutual_preferences": 4,
+    "single_hit_rate": 0.425,
+    "mutual_hit_rate": 1.0
+  },
+  "groups": [
+    {
+      "group_id": 1,
+      "members": [
+        "F6",
+        "F9",
+        "M11",
+        "M4"
+      ],
+      "total_score": 6.0,
+      "single_preferences_count": 3,
+      "mutual_preferences_count": 0,
+      "single_preferences": [
+        {
+          "from": "F6",
+          "to": "M11"
+        },
+        {
+          "from": "F9",
+          "to": "M4"
+        },
+        {
+          "from": "M11",
+          "to": "F9"
+        }
+      ],
+      "mutual_preferences": []
+    },
+    {
+      "group_id": 2,
+      "members": [
+        "F12",
+        "F2",
+        "M2",
+        "M5"
+      ],
+      "total_score": 9.0,
+      "single_preferences_count": 3,
+      "mutual_preferences_count": 1,
+      "single_preferences": [
+        {
+          "from": "F2",
+          "to": "M2"
+        },
+        {
+          "from": "F2",
+          "to": "M5"
+        },
+        {
+          "from": "M2",
+          "to": "F12"
+        }
+      ],
+      "mutual_preferences": [
+        {
+          "members": [
+            "F12",
+            "M5"
+          ]
+        }
+      ]
+    },
+    {
+      "group_id": 3,
+      "members": [
+        "F5",
+        "F7",
+        "M10",
+        "M9"
+      ],
+      "total_score": 9.0,
+      "single_preferences_count": 3,
+      "mutual_preferences_count": 1,
+      "single_preferences": [
+        {
+          "from": "F7",
+          "to": "M10"
+        },
+        {
+          "from": "F7",
+          "to": "M9"
+        },
+        {
+          "from": "M9",
+          "to": "F5"
+        }
+      ],
+      "mutual_preferences": [
+        {
+          "members": [
+            "F5",
+            "M10"
+          ]
+        }
+      ]
+    },
+    {
+      "group_id": 4,
+      "members": [
+        "F4",
+        "F8",
+        "M6",
+        "M8"
+      ],
+      "total_score": 8.0,
+      "single_preferences_count": 3,
+      "mutual_preferences_count": 1,
+      "single_preferences": [
+        {
+          "from": "F8",
+          "to": "M8"
+        },
+        {
+          "from": "F8",
+          "to": "M6"
+        },
+        {
+          "from": "M6",
+          "to": "F4"
+        }
+      ],
+      "mutual_preferences": [
+        {
+          "members": [
+            "F4",
+            "M8"
+          ]
+        }
+      ]
+    },
+    {
+      "group_id": 5,
+      "members": [
+        "F1",
+        "F3",
+        "M12",
+        "M3"
+      ],
+      "total_score": 3.0,
+      "single_preferences_count": 3,
+      "mutual_preferences_count": 0,
+      "single_preferences": [
+        {
+          "from": "F1",
+          "to": "M3"
+        },
+        {
+          "from": "F3",
+          "to": "M12"
+        },
+        {
+          "from": "M12",
+          "to": "F1"
+        }
+      ],
+      "mutual_preferences": []
+    },
+    {
+      "group_id": 6,
+      "members": [
+        "F10",
+        "F11",
+        "M1",
+        "M7"
+      ],
+      "total_score": 7.0,
+      "single_preferences_count": 2,
+      "mutual_preferences_count": 1,
+      "single_preferences": [
+        {
+          "from": "F10",
+          "to": "M7"
+        },
+        {
+          "from": "F11",
+          "to": "M7"
+        }
+      ],
+      "mutual_preferences": [
+        {
+          "members": [
+            "F10",
+            "M1"
+          ]
+        }
+      ]
+    }
+  ]
+}
