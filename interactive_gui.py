@@ -71,8 +71,12 @@ class DatingMatchGUI:
         file_input_frame = ttk.Frame(file_frame)
         file_input_frame.pack(fill="x")
         
-        ttk.Entry(file_input_frame, textvariable=self.input_file, width=40).pack(side="left", padx=(0, 10))
-        ttk.Button(file_input_frame, text="选择文件", command=self.select_file).pack(side="right")
+        # 文件路径输入框
+        self.file_entry = ttk.Entry(file_input_frame, textvariable=self.input_file)
+        self.file_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        # 选择文件按钮，指定宽度确保文字显示完整
+        ttk.Button(file_input_frame, text="选择文件", command=self.select_file, width=10).pack(side="right")
         
         ttk.Label(file_frame, text="支持格式: Excel (.xlsx) 或 CSV (.csv)", 
                  font=("Arial", 9), foreground="gray").pack(anchor="w", pady=(5, 0))
@@ -140,15 +144,15 @@ class DatingMatchGUI:
         button_frame.pack(fill="x", pady=20)
         
         self.start_button = ttk.Button(button_frame, text="开始分组", command=self.start_optimization,
-                                      style="Accent.TButton")
+                                      style="Accent.TButton", width=10)
         self.start_button.pack(side="right", padx=(10, 0))
         
         self.stop_button = ttk.Button(button_frame, text="停止运行", command=self.stop_optimization,
-                                     state="disabled")
+                                     state="disabled", width=10)
         self.stop_button.pack(side="right", padx=(10, 0))
         
-        ttk.Button(button_frame, text="清空日志", command=self.clear_log).pack(side="left")
-        ttk.Button(button_frame, text="退出", command=self.root.quit).pack(side="right")
+        ttk.Button(button_frame, text="清空日志", command=self.clear_log, width=8).pack(side="left")
+        ttk.Button(button_frame, text="退出", command=self.root.quit, width=6).pack(side="right")
         
         # 进度状态
         progress_frame = ttk.LabelFrame(control_frame, text="运行状态", padding=10)
