@@ -11,6 +11,15 @@ import os
 import time
 from pathlib import Path
 
+# 强制输出实时刷新
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
+def print_flush(*args, **kwargs):
+    """带强制刷新的print函数"""
+    print(*args, **kwargs)
+    sys.stdout.flush()
+
 # 添加src目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
@@ -168,6 +177,7 @@ def create_progress_callback(verbose):
     def callback(message):
         if verbose:
             print("[INFO] " + str(message))
+            sys.stdout.flush()  # 强制刷新输出
     return callback
 
 
@@ -248,7 +258,7 @@ def main():
         else:
             data, io_warnings = io_handler.read_preferences_from_excel(args.input, args.sheet)
         
-        print("✅ 成功读取 " + str(len(data)) + " 条偏好记录")
+        print_flush("✅ 成功读取 " + str(len(data)) + " 条偏好记录")
         
         if io_warnings:
             print("⚠️  读取警告:")
@@ -257,20 +267,20 @@ def main():
         
         # 自动检测人数
         num_males, num_females = detect_guest_counts(data)
-        print(f"📊 检测到嘉宾人数: {num_males}男 + {num_females}女 = {num_males + num_females}人")
+        print_flush(f"📊 检测到嘉宾人数: {num_males}男 + {num_females}女 = {num_males + num_females}人")
         
         # 计算分组信息
         total_people = num_males + num_females
         if args.pairing_mode:
             expected_pairs = min(num_males, num_females)
-            print(f"🔗 配对模式: 将生成{expected_pairs}对1v1配对")
+            print_flush(f"🔗 配对模式: 将生成{expected_pairs}对1v1配对")
         else:
             num_groups = (total_people + args.group_size - 1) // args.group_size  # 向上取整
-            print(f"👥 分组模式: 将生成{num_groups}组，每组最多{args.group_size}人")
+            print_flush(f"👥 分组模式: 将生成{num_groups}组，每组最多{args.group_size}人")
         
         # 2. 解析偏好
         if args.mode == 'ranking':
-            print(f"\n🔍 正在解析ranking偏好...")
+            print_flush(f"\n🔍 正在解析ranking偏好...")
             parser = RankingPreferenceParser(
                 first_preference_weight=args.first_preference_weight,
                 second_preference_weight=args.second_preference_weight,
@@ -279,7 +289,7 @@ def main():
             )
             parse_result = parser.parse_all_preferences(data)
             
-            print(f"✅ 解析出 {len(parse_result.weighted_edges)} 条加权偏好边")
+            print_flush(f"✅ 解析出 {len(parse_result.weighted_edges)} 条加权偏好边")
             
             if parse_result.warnings:
                 print("⚠️  解析警告:")
@@ -293,11 +303,11 @@ def main():
                 parser.print_parse_summary(parse_result)
                 
         else:
-            print("\n🔍 正在解析中文偏好...")
+            print_flush("\n🔍 正在解析中文偏好...")
             parser = ChinesePreferenceParser(max_male_id=num_males, max_female_id=num_females)
             parse_result = parser.parse_all_preferences(data)
             
-            print(f"✅ 解析出 {len(parse_result.edges)} 条有向偏好边")
+            print_flush(f"✅ 解析出 {len(parse_result.edges)} 条有向偏好边")
             
             if parse_result.warnings:
                 print("⚠️  解析警告:")
@@ -334,7 +344,7 @@ def main():
         
         # 3. 创建偏好图
         round_info = "第二轮模式" if args.round_two else "标准模式"
-        print(f"\n📈 正在构建偏好图...（{round_info}）")
+        print_flush(f"\n📈 正在构建偏好图...（{round_info}）")
         if args.mode == 'ranking':
             # Ranking模式：使用加权边
             graph = PreferenceGraph(
@@ -368,10 +378,10 @@ def main():
         
         if args.solver == 'auto':
             # 自动选择求解器 - 优先使用启发式（更稳定）
-            print("\n🤖 自动选择求解器...")
+            print_flush("\n🤖 自动选择求解器...")
             
             # 优先使用启发式求解器（更稳定）
-            print("🔧 使用启发式求解器...")
+            print_flush("🔧 使用启发式求解器...")
             heur_solver = HeuristicSolver(
                 graph, args.two_by_two, args.seed, args.max_iter, 
                 pairing_mode=args.pairing_mode,
@@ -464,8 +474,8 @@ def main():
             print(f"求解信息: {solve_info}")
             return
         
-        print(f"\n✅ 求解成功! 用时 {solve_time:.2f} 秒")
-        print(f"求解器: {solve_info.get('solver_used', 'Unknown')}")
+        print_flush(f"\n✅ 求解成功! 用时 {solve_time:.2f} 秒")
+        print_flush(f"求解器: {solve_info.get('solver_used', 'Unknown')}")
         
         if args.verbose:
             print(f"求解详情: {solve_info}")
