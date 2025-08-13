@@ -96,6 +96,16 @@ class DatingMatchGUI:
         round_combo = ttk.Combobox(row1_frame, textvariable=self.round_number, 
                                   values=["1", "2"], width=8, state="readonly")
         round_combo.pack(side="left", padx=(5, 20))
+        round_combo.bind("<<ComboboxSelected>>", self.on_round_change)
+        
+        # 第一轮文件状态提示（独立行）
+        status_frame = ttk.Frame(config_frame)
+        status_frame.pack(fill="x", pady=(0, 5))
+        
+        self.round_status_var = tk.StringVar()
+        self.round_status_label = ttk.Label(status_frame, textvariable=self.round_status_var, 
+                                          font=("Arial", 9), foreground="blue")
+        self.round_status_label.pack(side="left", padx=(20, 0))
         
         # 第二行配置
         row2_frame = ttk.Frame(config_frame)
@@ -187,6 +197,48 @@ class DatingMatchGUI:
         # 启动输出监控
         self.monitor_output()
         
+        # 初始检查第一轮文件状态（延迟执行，确保界面完全初始化）
+        self.root.after(100, self.check_first_round_files)
+        
+    def on_round_change(self, event=None):
+        """当轮次选择改变时的回调"""
+        self.check_first_round_files()
+        
+    def check_first_round_files(self):
+        """检查第一轮文件状态并更新提示"""
+        round_value = self.round_number.get()
+        print(f"[DEBUG] check_first_round_files: round_value = '{round_value}'")  # 调试输出
+        
+        if round_value == "2":
+            # 检查可用的第一轮文件
+            files_to_check = [
+                ("outputs/安排结果_第一轮.json", "标准第一轮文件"),
+                ("outputs/安排结果.json", "通用结果文件")
+            ]
+            
+            found_file = None
+            for file_path, description in files_to_check:
+                exists = os.path.exists(file_path)
+                print(f"[DEBUG] 检查文件: {file_path} - 存在: {exists}")  # 调试输出
+                if exists:
+                    found_file = (file_path, description)
+                    break
+            
+            if found_file:
+                filename = os.path.basename(found_file[0])
+                status_text = f"✓ 将使用: {filename}"
+                self.round_status_var.set(status_text)
+                self.round_status_label.configure(foreground="green")
+                print(f"[DEBUG] 设置状态文字: {status_text}")  # 调试输出
+            else:
+                status_text = "⚠ 未找到第一轮结果文件"
+                self.round_status_var.set(status_text)
+                self.round_status_label.configure(foreground="red")
+                print(f"[DEBUG] 设置警告文字: {status_text}")  # 调试输出
+        else:
+            self.round_status_var.set("")
+            print("[DEBUG] 清空状态文字（非第二轮）")  # 调试输出
+        
     def select_file(self):
         """选择输入文件"""
         file_path = filedialog.askopenfilename(
@@ -243,24 +295,41 @@ class DatingMatchGUI:
         if self.export_xlsx.get():
             cmd.append("--export-xlsx")
         
-        # 第二轮参数（暂时简化处理）
+        # 第二轮参数
         if self.round_number.get() == "2":
-            # 寻找第一轮结果文件
+            # 寻找第一轮结果文件，按优先级顺序
             first_round_files = [
-                "outputs/安排结果_第一轮.json",
-                "outputs/安排结果.json"
+                ("outputs/安排结果_第一轮.json", "标准第一轮文件"),
+                ("outputs/安排结果.json", "通用结果文件")
             ]
+            
             first_round_file = None
-            for f in first_round_files:
-                if os.path.exists(f):
-                    first_round_file = f
+            file_description = ""
+            
+            for file_path, description in first_round_files:
+                if os.path.exists(file_path):
+                    first_round_file = file_path
+                    file_description = description
                     break
             
             if first_round_file:
                 cmd.extend(["--round-two", "--first-round-file", first_round_file])
+                # 在日志中显示使用的文件
+                self.add_log(f"第二轮模式：将使用 {first_round_file} ({file_description})")
             else:
-                messagebox.showwarning("警告", 
-                    "未找到第一轮结果文件，将按第一轮模式运行")
+                available_files = []
+                for file_path, _ in first_round_files:
+                    if os.path.exists(file_path):
+                        available_files.append(file_path)
+                
+                if not available_files:
+                    messagebox.showwarning("警告", 
+                        "未找到第一轮结果文件！\n\n" +
+                        "请确保 outputs/ 目录下存在以下文件之一：\n" +
+                        "• 安排结果_第一轮.json\n" +
+                        "• 安排结果.json\n\n" +
+                        "将按第一轮模式运行")
+                    self.add_log("警告：未找到第一轮结果文件，按第一轮模式运行")
         
         return cmd
     
