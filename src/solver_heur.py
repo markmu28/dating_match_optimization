@@ -26,7 +26,8 @@ class HeuristicSolver:
                  pairing_mode: bool = False,
                  num_males: int = 12,
                  num_females: int = 12,
-                 group_size: int = 4):
+                 group_size: int = 4,
+                 privileged_guests: Optional[set] = None):
         """
         初始化启发式求解器
         
@@ -42,6 +43,7 @@ class HeuristicSolver:
             num_males: 男性人数
             num_females: 女性人数
             group_size: 每组人数
+            privileged_guests: 特权嘉宾集合，这些嘉宾必须与至少一个喜欢的人同组
         """
         self.graph = graph
         self.require_2by2 = require_2by2
@@ -53,6 +55,7 @@ class HeuristicSolver:
         self.num_males = num_males
         self.num_females = num_females
         self.group_size = group_size
+        self.privileged_guests = privileged_guests or set()
         
         # 设置随机种子
         if seed is not None:
@@ -122,10 +125,15 @@ class HeuristicSolver:
         return pairs
     
     def generate_greedy_solution(self) -> List[List[str]]:
-        """生成贪心初始解"""
+        """生成贪心初始解，优先满足特权嘉宾约束"""
         if self.pairing_mode:
             return self.generate_greedy_pairing()
-            
+        
+        # 如果有特权嘉宾，优先处理
+        if self.privileged_guests:
+            return self._generate_privileged_aware_solution()
+        
+        # 标准贪心算法（原逻辑）
         solution = [[] for _ in range(self.num_groups)]
         
         if self.require_2by2:
@@ -166,6 +174,141 @@ class HeuristicSolver:
                     solution[i] = sorted_persons[i * self.group_size:(i + 1) * self.group_size]
         
         return solution
+    
+    def _generate_privileged_aware_solution(self) -> List[List[str]]:
+        """生成考虑特权嘉宾约束的初始解"""
+        solution = [[] for _ in range(self.num_groups)]
+        placed_persons = set()
+        
+        # 第一步：为特权嘉宾找到合适的位置
+        for privileged_guest in self.privileged_guests:
+            if privileged_guest in placed_persons:
+                continue
+            
+            # 找到该特权嘉宾喜欢的人
+            liked_persons = [dst for src, dst in self.graph.edges if src == privileged_guest and dst not in placed_persons]
+            
+            if not liked_persons:
+                # 如果特权嘉宾没有喜欢的人或者喜欢的人都已被分配，直接分配到最有空余的组
+                min_group = min(range(self.num_groups), key=lambda g: len(solution[g]))
+                solution[min_group].append(privileged_guest)
+                placed_persons.add(privileged_guest)
+                continue
+            
+            # 选择一个喜欢的人一起分配
+            best_liked = liked_persons[0]  # 简单起见选择第一个，可以优化为选择最佳匹配
+            
+            # 找到最合适的组（考虑性别平衡）
+            best_group = self._find_best_group_for_pair(solution, privileged_guest, best_liked, placed_persons)
+            
+            solution[best_group].append(privileged_guest)
+            solution[best_group].append(best_liked)
+            placed_persons.add(privileged_guest)
+            placed_persons.add(best_liked)
+        
+        # 第二步：分配剩余的人
+        remaining_persons = [p for p in self.all_persons if p not in placed_persons]
+        
+        if self.require_2by2:
+            # 按性别分离剩余人员
+            remaining_males = [p for p in remaining_persons if p.startswith('M')]
+            remaining_females = [p for p in remaining_persons if p.startswith('F')]
+            
+            # 为每组补充人员到目标大小
+            for group_idx in range(self.num_groups):
+                current_group = solution[group_idx]
+                current_males = len([p for p in current_group if p.startswith('M')])
+                current_females = len([p for p in current_group if p.startswith('F')])
+                
+                if group_idx == self.num_groups - 1:  # 最后一组
+                    # 将所有剩余人员分配到最后一组，尽量保持性别平衡
+                    while remaining_males and remaining_females and len(current_group) < self.group_size:
+                        if current_males <= current_females and remaining_males:
+                            solution[group_idx].append(remaining_males.pop(0))
+                            current_males += 1
+                        elif remaining_females:
+                            solution[group_idx].append(remaining_females.pop(0))
+                            current_females += 1
+                        current_group = solution[group_idx]
+                    
+                    # 添加所有剩余人员
+                    solution[group_idx].extend(remaining_males)
+                    solution[group_idx].extend(remaining_females)
+                    remaining_males.clear()
+                    remaining_females.clear()
+                else:
+                    # 标准组：保持性别平衡
+                    target_gender_count = self.group_size // 2
+                    
+                    # 添加男性到目标数量
+                    while current_males < target_gender_count and remaining_males and len(current_group) < self.group_size:
+                        solution[group_idx].append(remaining_males.pop(0))
+                        current_males += 1
+                        current_group = solution[group_idx]
+                    
+                    # 添加女性到目标数量
+                    while current_females < target_gender_count and remaining_females and len(current_group) < self.group_size:
+                        solution[group_idx].append(remaining_females.pop(0))
+                        current_females += 1
+                        current_group = solution[group_idx]
+        else:
+            # 不考虑性别平衡，简单分配
+            person_idx = 0
+            for group_idx in range(self.num_groups):
+                while len(solution[group_idx]) < self.group_size and person_idx < len(remaining_persons):
+                    solution[group_idx].append(remaining_persons[person_idx])
+                    person_idx += 1
+            
+            # 将剩余人员分配到最后一组
+            if person_idx < len(remaining_persons):
+                solution[-1].extend(remaining_persons[person_idx:])
+        
+        return solution
+    
+    def _find_best_group_for_pair(self, solution: List[List[str]], person1: str, person2: str, placed_persons: set) -> int:
+        """为一对人员找到最佳的分组"""
+        best_group = 0
+        best_score = float('-inf')
+        
+        for group_idx in range(self.num_groups):
+            group = solution[group_idx]
+            
+            # 检查容量
+            if len(group) + 2 > self.group_size and group_idx != self.num_groups - 1:
+                continue  # 非最后一组不能超出容量
+            
+            # 检查性别平衡（如果需要）
+            if self.require_2by2:
+                current_males = len([p for p in group if p.startswith('M')])
+                current_females = len([p for p in group if p.startswith('F')])
+                
+                new_males = current_males + (1 if person1.startswith('M') else 0) + (1 if person2.startswith('M') else 0)
+                new_females = current_females + (1 if person1.startswith('F') else 0) + (1 if person2.startswith('F') else 0)
+                
+                # 检查性别平衡是否严重失调
+                if abs(new_males - new_females) > 1 and group_idx != self.num_groups - 1:
+                    continue
+            
+            # 计算该组的"吸引力"分数（基于现有成员与新成员的偏好匹配）
+            score = 0
+            for existing_person in group:
+                if (person1, existing_person) in self.graph.edges:
+                    score += 1
+                if (person2, existing_person) in self.graph.edges:
+                    score += 1
+                if (existing_person, person1) in self.graph.edges:
+                    score += 1
+                if (existing_person, person2) in self.graph.edges:
+                    score += 1
+            
+            # 偏好组容量较小的组（负荷均衡）
+            score -= len(group) * 0.1
+            
+            if score > best_score:
+                best_score = score
+                best_group = group_idx
+        
+        return best_group
 
     def generate_greedy_pairing(self) -> List[List[str]]:
         """生成贪心一男一女配对方案"""
@@ -227,6 +370,48 @@ class HeuristicSolver:
         """计算解的总得分"""
         stats = self.graph.calculate_overall_score(solution)
         return stats.total_score
+    
+    def check_privileged_constraints(self, solution: List[List[str]]) -> Tuple[bool, List[str]]:
+        """
+        检查特权嘉宾约束是否满足
+        
+        Args:
+            solution: 分组方案
+            
+        Returns:
+            (is_satisfied, violated_guests): 约束是否满足，违反约束的特权嘉宾列表
+        """
+        if not self.privileged_guests:
+            return True, []
+        
+        violated_guests = []
+        
+        # 为每个特权嘉宾检查约束
+        for privileged_guest in self.privileged_guests:
+            # 找到该特权嘉宾所在的组
+            guest_group = None
+            for group_idx, group in enumerate(solution):
+                if privileged_guest in group:
+                    guest_group = group
+                    break
+            
+            if guest_group is None:
+                violated_guests.append(privileged_guest)
+                continue
+            
+            # 检查该特权嘉宾是否与至少一个喜欢的人在同一组
+            has_liked_person = False
+            for other_person in guest_group:
+                if other_person != privileged_guest:
+                    # 检查特权嘉宾是否喜欢这个人
+                    if (privileged_guest, other_person) in self.graph.edges:
+                        has_liked_person = True
+                        break
+            
+            if not has_liked_person:
+                violated_guests.append(privileged_guest)
+        
+        return len(violated_guests) == 0, violated_guests
     
     def get_neighbors(self, solution: List[List[str]]) -> List[List[List[str]]]:
         """生成邻域解（通过人员交换）"""

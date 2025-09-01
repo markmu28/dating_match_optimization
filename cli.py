@@ -145,6 +145,11 @@ def parse_arguments():
                        default=4,
                        help='每组人数（默认: 4，最后一组可能少于此值）')
     
+    # 特权嘉宾选项
+    parser.add_argument('--privileged-guests',
+                       type=str,
+                       help='特权嘉宾列表，用逗号分隔（例如：M1,F3,M5）。特权嘉宾保证分到至少一个自己喜欢的嘉宾同组')
+    
     # 输出选项
     parser.add_argument('--export-xlsx',
                        action='store_true',
@@ -278,6 +283,32 @@ def main():
             num_groups = (total_people + args.group_size - 1) // args.group_size  # 向上取整
             print_flush(f"👥 分组模式: 将生成{num_groups}组，每组最多{args.group_size}人")
         
+        # 解析特权嘉宾
+        privileged_guests = set()
+        if args.privileged_guests:
+            privileged_list = [g.strip().upper() for g in args.privileged_guests.split(',') if g.strip()]
+            for guest in privileged_list:
+                # 验证嘉宾ID格式
+                if guest.startswith('M') and guest[1:].isdigit():
+                    guest_id = int(guest[1:])
+                    if 1 <= guest_id <= num_males:
+                        privileged_guests.add(guest)
+                    else:
+                        print(f"⚠️  无效的特权嘉宾ID: {guest}（男性ID范围: M1-M{num_males}）")
+                elif guest.startswith('F') and guest[1:].isdigit():
+                    guest_id = int(guest[1:])
+                    if 1 <= guest_id <= num_females:
+                        privileged_guests.add(guest)
+                    else:
+                        print(f"⚠️  无效的特权嘉宾ID: {guest}（女性ID范围: F1-F{num_females}）")
+                else:
+                    print(f"⚠️  无效的特权嘉宾ID格式: {guest}（应为M1-M{num_males}或F1-F{num_females}）")
+            
+            if privileged_guests:
+                print_flush(f"🌟 设置特权嘉宾: {', '.join(sorted(privileged_guests))}（共{len(privileged_guests)}人）")
+            else:
+                print("⚠️  未识别到有效的特权嘉宾")
+        
         # 2. 解析偏好
         if args.mode == 'ranking':
             print_flush(f"\n🔍 正在解析ranking偏好...")
@@ -385,7 +416,8 @@ def main():
             heur_solver = HeuristicSolver(
                 graph, args.two_by_two, args.seed, args.max_iter, 
                 pairing_mode=args.pairing_mode,
-                num_males=num_males, num_females=num_females, group_size=args.group_size
+                num_males=num_males, num_females=num_females, group_size=args.group_size,
+                privileged_guests=privileged_guests
             )
             solution, solve_info = heur_solver.solve(
                 algorithm=args.heur_algorithm,
@@ -401,7 +433,8 @@ def main():
                 if not args.pairing_mode:  # ILP求解器暂不支持配对模式
                     try:
                         ilp_solver = ILPSolver(graph, args.two_by_two, args.ilp_time_limit,
-                                             num_males=num_males, num_females=num_females, group_size=args.group_size)
+                                             num_males=num_males, num_females=num_females, group_size=args.group_size,
+                                             privileged_guests=privileged_guests)
                         if ilp_solver.pulp_available:
                             solution, solve_info = ilp_solver.solve_with_callback(progress_callback)
                             solve_info['solver_used'] = 'ILP (fallback)'
@@ -420,7 +453,8 @@ def main():
                 heur_solver = HeuristicSolver(
                     graph, args.two_by_two, args.seed, args.max_iter,
                     pairing_mode=args.pairing_mode,
-                    num_males=num_males, num_females=num_females, group_size=args.group_size
+                    num_males=num_males, num_females=num_females, group_size=args.group_size,
+                    privileged_guests=privileged_guests
                 )
                 solution, solve_info = heur_solver.solve(
                     algorithm=args.heur_algorithm,
@@ -432,7 +466,8 @@ def main():
             else:
                 try:
                     ilp_solver = ILPSolver(graph, args.two_by_two, args.ilp_time_limit,
-                                         num_males=num_males, num_females=num_females, group_size=args.group_size)
+                                         num_males=num_males, num_females=num_females, group_size=args.group_size,
+                                         privileged_guests=privileged_guests)
                     solution, solve_info = ilp_solver.solve_with_callback(progress_callback)
                     solve_info['solver_used'] = 'ILP'
                 except Exception as e:
@@ -441,7 +476,8 @@ def main():
                     heur_solver = HeuristicSolver(
                         graph, args.two_by_two, args.seed, args.max_iter,
                         pairing_mode=args.pairing_mode,
-                        num_males=num_males, num_females=num_females, group_size=args.group_size
+                        num_males=num_males, num_females=num_females, group_size=args.group_size,
+                        privileged_guests=privileged_guests
                     )
                     solution, solve_info = heur_solver.solve(
                         algorithm=args.heur_algorithm,
@@ -456,7 +492,8 @@ def main():
             heur_solver = HeuristicSolver(
                 graph, args.two_by_two, args.seed, args.max_iter,
                 pairing_mode=args.pairing_mode,
-                num_males=num_males, num_females=num_females, group_size=args.group_size
+                num_males=num_males, num_females=num_females, group_size=args.group_size,
+                privileged_guests=privileged_guests
             )
             solution, solve_info = heur_solver.solve(
                 algorithm=args.heur_algorithm,
@@ -490,11 +527,53 @@ def main():
         else:
             print(f"\n✅ 分组方案验证通过")
         
-        # 7. 计算统计信息
+        # 7. 验证特权嘉宾约束
+        if privileged_guests and solution:
+            print(f"\n🌟 正在验证特权嘉宾约束...")
+            privileged_satisfied = {}
+            privileged_violations = []
+            
+            for privileged_guest in privileged_guests:
+                # 找到该特权嘉宾所在的组
+                guest_group = None
+                for group_idx, group in enumerate(solution):
+                    if privileged_guest in group:
+                        guest_group = group
+                        break
+                
+                if guest_group is None:
+                    privileged_violations.append(f"{privileged_guest}: 未找到所在组")
+                    privileged_satisfied[privileged_guest] = False
+                    continue
+                
+                # 检查是否与喜欢的人同组
+                liked_persons_in_group = []
+                for other_person in guest_group:
+                    if other_person != privileged_guest and (privileged_guest, other_person) in graph.edges:
+                        liked_persons_in_group.append(other_person)
+                
+                if liked_persons_in_group:
+                    privileged_satisfied[privileged_guest] = True
+                    print(f"   ✅ {privileged_guest} 与喜欢的人 {', '.join(liked_persons_in_group)} 同组")
+                else:
+                    privileged_satisfied[privileged_guest] = False
+                    privileged_violations.append(f"{privileged_guest}: 未与喜欢的人同组")
+                    print(f"   ❌ {privileged_guest} 未与任何喜欢的人同组")
+            
+            satisfied_count = sum(privileged_satisfied.values())
+            total_privileged = len(privileged_guests)
+            print(f"\n🌟 特权嘉宾约束满足情况: {satisfied_count}/{total_privileged} ({satisfied_count/total_privileged*100:.1f}%)")
+            
+            if privileged_violations:
+                print("⚠️  未满足约束的特权嘉宾:")
+                for violation in privileged_violations:
+                    print(f"   • {violation}")
+        
+        # 8. 计算统计信息
         print(f"\n📊 正在计算统计信息...")
         stats = graph.calculate_overall_score(solution)
         
-        # 8. 显示结果
+        # 9. 显示结果
         print(f"\n🎉 === 分组结果 ===")
         graph.print_overall_stats(stats)
         
@@ -510,20 +589,29 @@ def main():
         else:
             file_suffix = "_第一轮"
         
+        # 准备特权嘉宾信息
+        privileged_info = None
+        if privileged_guests:
+            privileged_info = {
+                "privileged_guests": list(privileged_guests),
+                "satisfied_count": satisfied_count if 'satisfied_count' in locals() else 0,
+                "satisfaction_rate": (satisfied_count/len(privileged_guests)*100) if 'satisfied_count' in locals() and len(privileged_guests) > 0 else 0
+            }
+        
         # 导出JSON
         json_file = os.path.join(args.output_dir, f'安排结果{file_suffix}.json')
-        io_handler.export_results_to_json(stats, json_file)
+        io_handler.export_results_to_json(stats, json_file, privileged_info=privileged_info)
         print(f"✅ JSON结果已保存: {json_file}")
         
         # 导出CSV
         csv_file = os.path.join(args.output_dir, f'安排结果{file_suffix}.csv')
-        io_handler.export_results_to_csv(stats, csv_file)
+        io_handler.export_results_to_csv(stats, csv_file, privileged_info=privileged_info)
         print(f"✅ CSV结果已保存: {csv_file}")
         
         # 导出Excel（可选）
         if args.export_xlsx:
             excel_file = os.path.join(args.output_dir, f'安排结果{file_suffix}.xlsx')
-            io_handler.export_results_to_excel(stats, excel_file)
+            io_handler.export_results_to_excel(stats, excel_file, privileged_info=privileged_info)
             print(f"✅ Excel结果已保存: {excel_file}")
         
         print(f"\n🎊 任务完成! 总用时 {time.time() - start_time:.2f} 秒")

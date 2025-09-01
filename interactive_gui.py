@@ -29,6 +29,7 @@ class DatingMatchGUI:
         self.export_xlsx = tk.BooleanVar(value=True)
         self.solver_choice = tk.StringVar(value="auto")
         self.mode_choice = tk.StringVar(value="ranking")
+        self.privileged_guests = tk.StringVar()
         
         # 运行状态
         self.is_running = False
@@ -131,6 +132,18 @@ class DatingMatchGUI:
                                  values=["ranking", "text"], width=12, state="readonly")
         mode_combo.pack(side="left", padx=(5, 0))
         
+        # 第四行配置 - 特权嘉宾
+        row4_frame = ttk.Frame(config_frame)
+        row4_frame.pack(fill="x", pady=5)
+        
+        ttk.Label(row4_frame, text="特权嘉宾:").pack(side="left")
+        privileged_entry = ttk.Entry(row4_frame, textvariable=self.privileged_guests, width=25)
+        privileged_entry.pack(side="left", padx=(5, 10))
+        
+        # 特权嘉宾说明
+        ttk.Label(row4_frame, text="(例: M1,F3,M5)", 
+                 font=("Arial", 9), foreground="gray").pack(side="left")
+        
         # 说明文本
         help_frame = ttk.LabelFrame(control_frame, text="说明", padding=10)
         help_frame.pack(fill="both", expand=True, pady=5)
@@ -141,7 +154,8 @@ class DatingMatchGUI:
 3. 选择是第几轮分组（第二轮需要第一轮结果文件）
 4. 配对模式将生成1v1配对，否则生成多人分组
 5. 数据模式: ranking=ID排名模式，text=中文描述解析
-6. 点击"开始分组"运行优化算法
+6. 特权嘉宾: 用逗号分隔的ID列表(如M1,F3)，这些嘉宾保证与至少一个自己喜欢的人同组
+7. 点击"开始分组"运行优化算法
 
 输出文件将保存在 outputs/ 目录下，包含分组结果和统计信息。"""
         
@@ -294,6 +308,10 @@ class DatingMatchGUI:
         
         if self.export_xlsx.get():
             cmd.append("--export-xlsx")
+        
+        # 特权嘉宾参数
+        if self.privileged_guests.get().strip():
+            cmd.extend(["--privileged-guests", self.privileged_guests.get().strip()])
         
         # 第二轮参数
         if self.round_number.get() == "2":

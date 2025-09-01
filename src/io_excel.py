@@ -258,7 +258,8 @@ class DataIO:
     def export_results_to_json(self, 
                               stats: OverallStats, 
                               output_file: str,
-                              include_detailed_stats: bool = True) -> None:
+                              include_detailed_stats: bool = True,
+                              privileged_info: Optional[Dict] = None) -> None:
         """
         导出结果到JSON文件
         
@@ -266,6 +267,7 @@ class DataIO:
             stats: 整体统计信息
             output_file: 输出文件路径
             include_detailed_stats: 是否包含详细统计
+            privileged_info: 特权嘉宾信息
         """
         try:
             # 构建输出数据
@@ -281,6 +283,10 @@ class DataIO:
                 },
                 "groups": []
             }
+            
+            # 添加特权嘉宾信息
+            if privileged_info:
+                result_data["privileged_guests"] = privileged_info
             
             for group_score in stats.group_scores:
                 group_data = {
@@ -311,7 +317,7 @@ class DataIO:
         except Exception as e:
             raise Exception(f"导出JSON失败: {str(e)}")
     
-    def export_results_to_csv(self, stats: OverallStats, output_file: str) -> None:
+    def export_results_to_csv(self, stats: OverallStats, output_file: str, privileged_info: Optional[Dict] = None) -> None:
         """
         导出结果到CSV文件
         
@@ -363,7 +369,7 @@ class DataIO:
         except Exception as e:
             raise Exception(f"导出CSV失败: {str(e)}")
     
-    def export_results_to_excel(self, stats: OverallStats, output_file: str) -> None:
+    def export_results_to_excel(self, stats: OverallStats, output_file: str, privileged_info: Optional[Dict] = None) -> None:
         """
         导出结果到Excel文件
         

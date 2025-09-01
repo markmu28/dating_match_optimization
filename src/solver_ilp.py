@@ -13,7 +13,8 @@ class ILPSolver:
     """ILP求解器"""
     
     def __init__(self, graph: PreferenceGraph, require_2by2: bool = True, time_limit: int = 300, 
-                 num_males: int = 12, num_females: int = 12, group_size: int = 4):
+                 num_males: int = 12, num_females: int = 12, group_size: int = 4,
+                 privileged_guests: Optional[set] = None):
         """
         初始化ILP求解器
         
@@ -24,6 +25,7 @@ class ILPSolver:
             num_males: 男性人数
             num_females: 女性人数
             group_size: 每组人数
+            privileged_guests: 特权嘉宾集合，这些嘉宾必须与至少一个喜欢的人同组
         """
         self.graph = graph
         self.require_2by2 = require_2by2
@@ -31,6 +33,7 @@ class ILPSolver:
         self.num_males = num_males
         self.num_females = num_females
         self.group_size = group_size
+        self.privileged_guests = privileged_guests or set()
         
         # 定义人员和组别
         self.males = [f"M{i}" for i in range(1, num_males + 1)]
@@ -160,6 +163,39 @@ class ILPSolver:
                         expected_gender_count = self.group_size // 2
                         prob += pulp.lpSum([x[(male, group)] for male in self.males]) == expected_gender_count
                         prob += pulp.lpSum([x[(female, group)] for female in self.females]) == expected_gender_count
+            
+            # 约束4：特权嘉宾约束
+            if self.privileged_guests:
+                for privileged_guest in self.privileged_guests:
+                    # 获取该特权嘉宾喜欢的人列表
+                    liked_persons = [dst for src, dst in self.graph.edges if src == privileged_guest]
+                    
+                    if liked_persons:
+                        # 对于每个组，如果特权嘉宾在该组，则至少有一个喜欢的人也在该组
+                        for group in self.groups:
+                            # 创建辅助变量 z[privileged_guest, group] 
+                            # = 1 if 特权嘉宾在组group且至少有一个喜欢的人在同组
+                            z_var_name = f"z_{privileged_guest}_{group}"
+                            z = pulp.LpVariable(z_var_name, cat='Binary')
+                            
+                            # z <= x[特权嘉宾, 组] （如果特权嘉宾不在组，z必须为0）
+                            prob += z <= x[(privileged_guest, group)]
+                            
+                            # z <= sum(x[喜欢的人, 组]) （如果没有喜欢的人在组，z必须为0）
+                            prob += z <= pulp.lpSum([x[(liked_person, group)] for liked_person in liked_persons])
+                            
+                            # z >= x[特权嘉宾, 组] + sum(x[喜欢的人, 组]) - len(liked_persons)
+                            # 这确保如果特权嘉宾在组且至少有一个喜欢的人在组，z就是1
+                            prob += z >= x[(privileged_guest, group)] + pulp.lpSum([x[(liked_person, group)] for liked_person in liked_persons]) - len(liked_persons)
+                        
+                        # 特权嘉宾必须满足约束：sum(z over all groups) >= 1
+                        # 即至少在一个组中同时有特权嘉宾和他喜欢的人
+                        z_vars = []
+                        for group in self.groups:
+                            z_var_name = f"z_{privileged_guest}_{group}"
+                            z_vars.append(pulp.LpVariable(z_var_name, cat='Binary'))
+                        
+                        prob += pulp.lpSum(z_vars) >= 1
             
             # 求解
             solver = pulp.PULP_CBC_CMD(timeLimit=self.time_limit, msg=False)
