@@ -7,6 +7,7 @@
 - **双模式解析**：支持Ranking ID模式（默认）和中文偏好描述解析
 - **两轮分组系统**：第一轮基础分组 + 第二轮避重复优化分组
 - **灵活分组约束**：支持2男2女分组模式和1男1女配对模式  
+- **特权嘉宾功能**：🌟 支持指定特权嘉宾，保证与至少一个喜欢的人同组
 - **智能惩罚机制**：第二轮自动避免第一轮单向喜欢重复，保持双向喜欢优势
 - **双重求解策略**：启发式算法（默认）+ ILP最优解回退
 - **多格式输出**：JSON、CSV、Excel结果导出，自动区分轮次
@@ -80,6 +81,7 @@
 - **每组人数**：默认4人，支持任意组大小
 - **第几轮**：选择1或2，第2轮需要第一轮结果文件
 - **配对模式**：勾选后生成1v1配对而非多人分组
+- **特权嘉宾**：🌟 输入嘉宾ID（如M1,F3），保证与喜欢的人同组
 - **求解器**：auto（推荐）、heuristic、ilp
 - **数据模式**：ranking（ID排名）、text（中文描述）
 - **导出Excel**：生成Excel格式结果文件
@@ -117,6 +119,9 @@ python cli.py --input 嘉宾偏好.xlsx --solver heuristic --seed 42
 # 1v1配对模式（12对而非6组）
 python cli.py --input 嘉宾偏好.xlsx --pairing-mode
 
+# 🌟 指定特权嘉宾（保证与喜欢的人同组）
+python cli.py --input 嘉宾偏好.xlsx --privileged-guests M1,F3,M5 --export-xlsx
+
 # 使用text模式解析中文偏好描述
 python cli.py --input 数据.xlsx --mode text
 
@@ -142,6 +147,10 @@ python cli.py --input 嘉宾偏好.xlsx --solver ilp
 #### 分组约束选项
 - `--two-by-two`: 是否强制每组2男2女（默认: true）
 - `--pairing-mode`: 1男1女配对模式，生成12对1v1配对而不是6组2v2分组
+- `--privileged-guests`: 🌟 特权嘉宾列表，用逗号分隔（例如：M1,F3,M5）
+  - 特权嘉宾保证分到至少一个自己喜欢的嘉宾同组
+  - 支持任意数量的特权嘉宾
+  - 实时显示特权约束满足情况和满足率
 
 #### 第二轮分组选项
 - `--round-two`: 第二轮分组模式，基于第一轮结果进行重新分组
@@ -197,6 +206,21 @@ python cli.py --input 数据.xlsx --two-by-two false --heur-algorithm hill_climb
 
 # 仅解析测试，不求解
 python cli.py --input 数据.xlsx --dry-run-parse --verbose
+```
+
+#### 🌟 特权嘉宾功能使用
+```bash
+# 指定单个特权嘉宾
+python cli.py --input 嘉宾偏好.xlsx --privileged-guests M1 --export-xlsx
+
+# 指定多个特权嘉宾
+python cli.py --input 嘉宾偏好.xlsx --privileged-guests M1,F3,M5,F8 --export-xlsx
+
+# 特权嘉宾 + 配对模式
+python cli.py --input 嘉宾偏好.xlsx --privileged-guests M1,F3 --pairing-mode --export-xlsx
+
+# 特权嘉宾 + 第二轮分组
+python cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好.xlsx --privileged-guests M1,F2 --export-xlsx
 ```
 
 #### 第二轮分组使用
@@ -491,11 +515,11 @@ pip install -r requirements.txt
 
 ```bash
 # 步骤1：第一轮分组（6组2v2模式）
-python cli.py --input 嘉宾偏好_第一轮.xlsx --export-xlsx --verbose
+python3 cli.py --input 嘉宾偏好_第一轮.xlsx --export-xlsx --verbose --privileged-guests M1
 # 输出：outputs/安排结果_第一轮.json, .csv, .xlsx
 
 # 步骤2：基于第一轮结果进行第二轮分组
-python cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好_第二轮.xlsx --export-xlsx --verbose
+python3 cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好_第二轮.xlsx --export-xlsx --verbose --privileged-guests M1
 # 输出：outputs/安排结果_第二轮.json, .csv, .xlsx
 ```
 
@@ -503,5 +527,5 @@ python cli.py --round-two --first-round-file "outputs/安排结果_第一轮.jso
 
 ```bash
 # 双人配对模式（12对1v1模式）
-python cli.py --input 嘉宾偏好_第三轮.xlsx --pairing-mode --export-xlsx --verbose
+python3 cli.py --input 嘉宾偏好_第三轮.xlsx --pairing-mode --export-xlsx --verbose --privileged-guests M1
 # 输出：outputs/安排结果_双人配对.json, .csv, .xlsx
