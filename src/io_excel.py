@@ -254,12 +254,125 @@ class DataIO:
             
         except Exception as e:
             raise Exception(f"读取文件失败: {str(e)}")
+
+    def read_guest_mapping(self, file_path: str, sheet_name: str = '嘉宾名单') -> Tuple[List[Dict], List[str]]:
+        """
+        读取嘉宾映射（姓名-编号-到场状态）
+
+        期望列：
+        - 必需：嘉宾类型, 编号, 姓名
+        - 可选：是否到场（支持 是/否, true/false, 1/0, Y/N, 出席/缺席）
+        """
+        warnings = []
+
+        try:
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"文件不存在: {file_path}")
+
+            if file_path.lower().endswith(('.xlsx', '.xls')):
+                try:
+                    df = pd.read_excel(file_path, sheet_name=sheet_name)
+                except ValueError as e:
+                    if 'sheet' in str(e).lower():
+                        warnings.append(f"未找到嘉宾名单sheet '{sheet_name}'，跳过姓名映射")
+                        return [], warnings
+                    raise e
+            elif file_path.lower().endswith('.csv'):
+                warnings.append("CSV不支持多sheet，跳过姓名映射")
+                return [], warnings
+            else:
+                warnings.append(f"不支持的映射文件格式: {file_path}")
+                return [], warnings
+
+            expected_required = ['嘉宾类型', '编号', '姓名']
+            optional_candidates = ['是否到场', '到场', '出席', '状态']
+            actual_columns = df.columns.tolist()
+
+            column_mapping = {}
+            for expected in expected_required:
+                found = False
+                for actual in actual_columns:
+                    if expected in str(actual) or str(actual) in expected:
+                        column_mapping[actual] = expected
+                        found = True
+                        break
+                if not found:
+                    raise ValueError(f"嘉宾名单缺少必需列: {expected}")
+
+            attendance_col = None
+            for candidate in optional_candidates:
+                for actual in actual_columns:
+                    if candidate in str(actual) or str(actual) in candidate:
+                        attendance_col = actual
+                        break
+                if attendance_col:
+                    break
+
+            if attendance_col:
+                column_mapping[attendance_col] = '是否到场'
+
+            df = df.rename(columns=column_mapping)
+            df = df.dropna(how='all')
+
+            result = []
+            for i, row in enumerate(df.to_dict('records')):
+                try:
+                    guest_type = str(row.get('嘉宾类型', '')).strip()
+                    guest_no = int(float(row.get('编号', '')))
+                    guest_name = str(row.get('姓名', '')).strip()
+                    if guest_type not in ('男', '女'):
+                        warnings.append(f"嘉宾名单第{i+2}行: 无效嘉宾类型 {guest_type}")
+                        continue
+                    if not guest_name:
+                        warnings.append(f"嘉宾名单第{i+2}行: 姓名为空")
+                        continue
+
+                    attendance_raw = row.get('是否到场', '')
+                    if pd.isna(attendance_raw) or str(attendance_raw).strip() == '':
+                        is_present = True
+                    else:
+                        v = str(attendance_raw).strip().lower()
+                        true_values = {'是', 'y', 'yes', 'true', '1', '到场', '出席', '在场'}
+                        false_values = {'否', 'n', 'no', 'false', '0', '缺席', '不到场', '请假'}
+                        if v in true_values:
+                            is_present = True
+                        elif v in false_values:
+                            is_present = False
+                        else:
+                            is_present = True
+                            warnings.append(f"嘉宾名单第{i+2}行: 无法识别到场状态 '{attendance_raw}'，按到场处理")
+
+                    guest_id = f"{'M' if guest_type == '男' else 'F'}{guest_no}"
+                    result.append({
+                        'guest_id': guest_id,
+                        'guest_type': guest_type,
+                        'guest_no': guest_no,
+                        'guest_name': guest_name,
+                        'is_present': is_present,
+                    })
+                except Exception as e:
+                    warnings.append(f"嘉宾名单第{i+2}行处理失败: {str(e)}")
+
+            return result, warnings
+
+        except Exception as e:
+            raise Exception(f"读取嘉宾名单失败: {str(e)}")
+
+    def _display_guest(self, guest_id: str, guest_display_map: Optional[Dict[str, str]] = None) -> str:
+        """将内部ID转换为展示文本"""
+        if not guest_display_map:
+            return guest_id
+        display = guest_display_map.get(guest_id)
+        if not display:
+            return guest_id
+        return f"{guest_id}({display})"
     
     def export_results_to_json(self, 
                               stats: OverallStats, 
                               output_file: str,
                               include_detailed_stats: bool = True,
-                              privileged_info: Optional[Dict] = None) -> None:
+                              privileged_info: Optional[Dict] = None,
+                              guest_display_map: Optional[Dict[str, str]] = None) -> None:
         """
         导出结果到JSON文件
         
@@ -292,6 +405,7 @@ class DataIO:
                 group_data = {
                     "group_id": group_score.group_id,
                     "members": group_score.members,
+                    "members_display": [self._display_guest(m, guest_display_map) for m in group_score.members],
                     "total_score": group_score.total_score,
                     "single_preferences_count": group_score.single_count,
                     "mutual_preferences_count": group_score.mutual_count
@@ -299,10 +413,20 @@ class DataIO:
                 
                 if include_detailed_stats:
                     group_data["single_preferences"] = [
-                        {"from": src, "to": dst} for src, dst in group_score.single_preferences
+                        {
+                            "from": src,
+                            "to": dst,
+                            "from_display": self._display_guest(src, guest_display_map),
+                            "to_display": self._display_guest(dst, guest_display_map)
+                        }
+                        for src, dst in group_score.single_preferences
                     ]
                     group_data["mutual_preferences"] = [
-                        {"members": list(pair)} for pair in group_score.mutual_preferences
+                        {
+                            "members": list(pair),
+                            "members_display": [self._display_guest(pair[0], guest_display_map), self._display_guest(pair[1], guest_display_map)]
+                        }
+                        for pair in group_score.mutual_preferences
                     ]
                 
                 result_data["groups"].append(group_data)
@@ -317,7 +441,7 @@ class DataIO:
         except Exception as e:
             raise Exception(f"导出JSON失败: {str(e)}")
     
-    def export_results_to_csv(self, stats: OverallStats, output_file: str, privileged_info: Optional[Dict] = None) -> None:
+    def export_results_to_csv(self, stats: OverallStats, output_file: str, privileged_info: Optional[Dict] = None, guest_display_map: Optional[Dict[str, str]] = None) -> None:
         """
         导出结果到CSV文件
         
@@ -332,30 +456,39 @@ class DataIO:
             for group_score in stats.group_scores:
                 # 构建成员字符串
                 members_str = ', '.join(group_score.members)
+                members_display_str = ', '.join([self._display_guest(m, guest_display_map) for m in group_score.members])
                 
                 # 构建偏好关系字符串
                 single_prefs_str = '; '.join([f"{src}→{dst}" for src, dst in group_score.single_preferences])
                 mutual_prefs_str = '; '.join([f"{pair[0]}↔{pair[1]}" for pair in group_score.mutual_preferences])
+                single_prefs_display_str = '; '.join([f"{self._display_guest(src, guest_display_map)}→{self._display_guest(dst, guest_display_map)}" for src, dst in group_score.single_preferences])
+                mutual_prefs_display_str = '; '.join([f"{self._display_guest(pair[0], guest_display_map)}↔{self._display_guest(pair[1], guest_display_map)}" for pair in group_score.mutual_preferences])
                 
                 csv_data.append({
                     '组号': group_score.group_id,
                     '成员': members_str,
+                    '成员(姓名)': members_display_str,
                     '总得分': group_score.total_score,
                     '单向喜欢数': group_score.single_count,
                     '互相喜欢数': group_score.mutual_count,
                     '单向喜欢详情': single_prefs_str if single_prefs_str else '无',
-                    '互相喜欢详情': mutual_prefs_str if mutual_prefs_str else '无'
+                    '互相喜欢详情': mutual_prefs_str if mutual_prefs_str else '无',
+                    '单向喜欢详情(姓名)': single_prefs_display_str if single_prefs_display_str else '无',
+                    '互相喜欢详情(姓名)': mutual_prefs_display_str if mutual_prefs_display_str else '无'
                 })
             
             # 添加汇总行
             csv_data.append({
                 '组号': '汇总',
                 '成员': f'总计 {len(stats.group_scores)} 组',
+                '成员(姓名)': '',
                 '总得分': stats.total_score,
                 '单向喜欢数': stats.total_single_prefs,
                 '互相喜欢数': stats.total_mutual_prefs,
                 '单向喜欢详情': f'命中率: {stats.hit_rate_single:.1%}',
-                '互相喜欢详情': f'命中率: {stats.hit_rate_mutual:.1%}'
+                '互相喜欢详情': f'命中率: {stats.hit_rate_mutual:.1%}',
+                '单向喜欢详情(姓名)': '',
+                '互相喜欢详情(姓名)': ''
             })
             
             # 创建DataFrame并导出
@@ -369,7 +502,7 @@ class DataIO:
         except Exception as e:
             raise Exception(f"导出CSV失败: {str(e)}")
     
-    def export_results_to_excel(self, stats: OverallStats, output_file: str, privileged_info: Optional[Dict] = None) -> None:
+    def export_results_to_excel(self, stats: OverallStats, output_file: str, privileged_info: Optional[Dict] = None, guest_display_map: Optional[Dict[str, str]] = None) -> None:
         """
         导出结果到Excel文件
         
@@ -388,6 +521,7 @@ class DataIO:
                     summary_data.append({
                         '组号': group_score.group_id,
                         '成员': ', '.join(group_score.members),
+                        '成员(姓名)': ', '.join([self._display_guest(m, guest_display_map) for m in group_score.members]),
                         '总得分': group_score.total_score,
                         '单向喜欢数': group_score.single_count,
                         '互相喜欢数': group_score.mutual_count
@@ -405,7 +539,9 @@ class DataIO:
                             '组号': group_score.group_id,
                             '关系类型': '单向喜欢',
                             '源': src,
+                            '源(姓名)': self._display_guest(src, guest_display_map),
                             '目标': dst,
+                            '目标(姓名)': self._display_guest(dst, guest_display_map),
                             '得分': 1.0
                         })
                     
@@ -415,7 +551,9 @@ class DataIO:
                             '组号': group_score.group_id,
                             '关系类型': '互相喜欢',
                             '源': pair[0],
+                            '源(姓名)': self._display_guest(pair[0], guest_display_map),
                             '目标': pair[1],
+                            '目标(姓名)': self._display_guest(pair[1], guest_display_map),
                             '得分': stats.group_scores[0].total_score / max(1, len(stats.group_scores[0].single_preferences + stats.group_scores[0].mutual_preferences))  # 这里简化处理
                         })
                 

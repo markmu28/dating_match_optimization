@@ -138,14 +138,24 @@ class ILPSolver:
                 prob += pulp.lpSum([x[(person, group)] for group in self.groups]) == 1
             
             # 约束2：每组人数限制
-            for group in self.groups:
-                if group == self.num_groups - 1:  # 最后一组
-                    # 最后一组的人数 = 总人数 - 前面组的人数
-                    remaining_people = len(self.all_persons) - (self.num_groups - 1) * self.group_size
-                    prob += pulp.lpSum([x[(person, group)] for person in self.all_persons]) == remaining_people
-                else:
-                    # 非最后一组，恰好group_size人
-                    prob += pulp.lpSum([x[(person, group)] for person in self.all_persons]) == self.group_size
+            if self.require_2by2:
+                for group in self.groups:
+                    if group == self.num_groups - 1:  # 最后一组
+                        # 最后一组的人数 = 总人数 - 前面组的人数
+                        remaining_people = len(self.all_persons) - (self.num_groups - 1) * self.group_size
+                        prob += pulp.lpSum([x[(person, group)] for person in self.all_persons]) == remaining_people
+                    else:
+                        # 非最后一组，恰好group_size人
+                        prob += pulp.lpSum([x[(person, group)] for person in self.all_persons]) == self.group_size
+            else:
+                # 放宽模式：均匀分配，人数在[min_size, max_size]范围内
+                total_people = len(self.all_persons)
+                min_size = total_people // self.num_groups
+                max_size = min_size + (1 if total_people % self.num_groups else 0)
+                for group in self.groups:
+                    group_count = pulp.lpSum([x[(person, group)] for person in self.all_persons])
+                    prob += group_count >= min_size
+                    prob += group_count <= max_size
             
             # 约束3：性别比例（如果需要）
             if self.require_2by2:
@@ -168,34 +178,21 @@ class ILPSolver:
             if self.privileged_guests:
                 for privileged_guest in self.privileged_guests:
                     # 获取该特权嘉宾喜欢的人列表
-                    liked_persons = [dst for src, dst in self.graph.edges if src == privileged_guest]
-                    
-                    if liked_persons:
-                        # 对于每个组，如果特权嘉宾在该组，则至少有一个喜欢的人也在该组
-                        for group in self.groups:
-                            # 创建辅助变量 z[privileged_guest, group] 
-                            # = 1 if 特权嘉宾在组group且至少有一个喜欢的人在同组
-                            z_var_name = f"z_{privileged_guest}_{group}"
-                            z = pulp.LpVariable(z_var_name, cat='Binary')
-                            
-                            # z <= x[特权嘉宾, 组] （如果特权嘉宾不在组，z必须为0）
-                            prob += z <= x[(privileged_guest, group)]
-                            
-                            # z <= sum(x[喜欢的人, 组]) （如果没有喜欢的人在组，z必须为0）
-                            prob += z <= pulp.lpSum([x[(liked_person, group)] for liked_person in liked_persons])
-                            
-                            # z >= x[特权嘉宾, 组] + sum(x[喜欢的人, 组]) - len(liked_persons)
-                            # 这确保如果特权嘉宾在组且至少有一个喜欢的人在组，z就是1
-                            prob += z >= x[(privileged_guest, group)] + pulp.lpSum([x[(liked_person, group)] for liked_person in liked_persons]) - len(liked_persons)
-                        
-                        # 特权嘉宾必须满足约束：sum(z over all groups) >= 1
-                        # 即至少在一个组中同时有特权嘉宾和他喜欢的人
-                        z_vars = []
-                        for group in self.groups:
-                            z_var_name = f"z_{privileged_guest}_{group}"
-                            z_vars.append(pulp.LpVariable(z_var_name, cat='Binary'))
-                        
-                        prob += pulp.lpSum(z_vars) >= 1
+                    liked_persons = sorted({
+                        dst for src, dst in self.graph.edges
+                        if src == privileged_guest and dst in self.all_persons
+                    })
+
+                    # 硬约束可行性检查：VIP至少要有一个喜欢对象
+                    if not liked_persons:
+                        return None, {
+                            "status": "infeasible",
+                            "message": f"VIP硬约束不可行: {privileged_guest} 没有喜欢对象"
+                        }
+
+                    # 对每个组强制：若VIP在该组，则组内至少有1个其喜欢的人
+                    for group in self.groups:
+                        prob += pulp.lpSum([x[(liked_person, group)] for liked_person in liked_persons]) >= x[(privileged_guest, group)]
             
             # 求解
             solver = pulp.PULP_CBC_CMD(timeLimit=self.time_limit, msg=False)

@@ -72,6 +72,27 @@ class HeuristicSolver:
         else:
             total_people = num_males + num_females
             self.num_groups = (total_people + group_size - 1) // group_size  # 向上取整
+        self.group_target_sizes = self._calculate_group_target_sizes()
+
+    def _calculate_group_target_sizes(self) -> List[int]:
+        """计算每组目标人数（放宽约束时尽量均匀分配）"""
+        if self.pairing_mode:
+            sizes = [2] * self.num_groups
+            if abs(self.num_males - self.num_females) == 1 and sizes:
+                sizes[-1] = 3
+            return sizes
+
+        total_people = self.num_males + self.num_females
+        if self.require_2by2:
+            sizes = [self.group_size] * self.num_groups
+            if sizes:
+                sizes[-1] = total_people - self.group_size * (self.num_groups - 1)
+            return sizes
+
+        # 非2by2：均匀分配，避免出现4+1这类极端尾组
+        base_size = total_people // self.num_groups
+        extra = total_people % self.num_groups
+        return [base_size + 1 if i < extra else base_size for i in range(self.num_groups)]
         
     def generate_random_solution(self) -> List[List[str]]:
         """生成随机分组方案"""
@@ -102,11 +123,10 @@ class HeuristicSolver:
             all_persons_shuffled = self.all_persons.copy()
             random.shuffle(all_persons_shuffled)
             
-            for i in range(self.num_groups):
-                if i == self.num_groups - 1:  # 最后一组
-                    solution[i] = all_persons_shuffled[i * self.group_size:]
-                else:
-                    solution[i] = all_persons_shuffled[i * self.group_size:(i + 1) * self.group_size]
+            cursor = 0
+            for i, target_size in enumerate(self.group_target_sizes):
+                solution[i] = all_persons_shuffled[cursor:cursor + target_size]
+                cursor += target_size
         
         return solution
 
@@ -121,6 +141,16 @@ class HeuristicSolver:
         pairs = []
         for i in range(self.num_groups):  # num_groups = min(num_males, num_females)
             pairs.append([males_copy[i], females_copy[i]])
+
+        # 若男女人数差1，允许一组三人
+        if self.num_males > self.num_females and len(males_copy) > self.num_groups and pairs:
+            extra_male = males_copy[self.num_groups]
+            target_idx = random.randrange(len(pairs))
+            pairs[target_idx].append(extra_male)
+        elif self.num_females > self.num_males and len(females_copy) > self.num_groups and pairs:
+            extra_female = females_copy[self.num_groups]
+            target_idx = random.randrange(len(pairs))
+            pairs[target_idx].append(extra_female)
         
         return pairs
     
@@ -167,11 +197,10 @@ class HeuristicSolver:
             
             sorted_persons = sorted(self.all_persons, key=lambda p: person_scores[p], reverse=True)
             
-            for i in range(self.num_groups):
-                if i == self.num_groups - 1:  # 最后一组
-                    solution[i] = sorted_persons[i * self.group_size:]
-                else:
-                    solution[i] = sorted_persons[i * self.group_size:(i + 1) * self.group_size]
+            cursor = 0
+            for i, target_size in enumerate(self.group_target_sizes):
+                solution[i] = sorted_persons[cursor:cursor + target_size]
+                cursor += target_size
         
         return solution
     
@@ -255,13 +284,19 @@ class HeuristicSolver:
             # 不考虑性别平衡，简单分配
             person_idx = 0
             for group_idx in range(self.num_groups):
-                while len(solution[group_idx]) < self.group_size and person_idx < len(remaining_persons):
+                target_size = self.group_target_sizes[group_idx]
+                while len(solution[group_idx]) < target_size and person_idx < len(remaining_persons):
                     solution[group_idx].append(remaining_persons[person_idx])
                     person_idx += 1
             
-            # 将剩余人员分配到最后一组
-            if person_idx < len(remaining_persons):
-                solution[-1].extend(remaining_persons[person_idx:])
+            # 安全兜底：理论上不会进入
+            while person_idx < len(remaining_persons):
+                for group_idx in range(self.num_groups):
+                    if len(solution[group_idx]) < self.group_target_sizes[group_idx]:
+                        solution[group_idx].append(remaining_persons[person_idx])
+                        person_idx += 1
+                        if person_idx >= len(remaining_persons):
+                            break
         
         return solution
     
@@ -353,8 +388,48 @@ class HeuristicSolver:
         for i in range(len(remaining_males)):
             if i < len(remaining_females):
                 selected_pairs.append([remaining_males[i], remaining_females[i]])
+
+        # 若男女人数差1，把多出来的人加入一个现有配对形成三人组
+        remaining_males = [m for m in self.males if m not in used_males]
+        remaining_females = [f for f in self.females if f not in used_females]
+
+        if len(remaining_males) == 1 and len(remaining_females) == 0 and selected_pairs:
+            extra_person = remaining_males[0]
+            best_idx = 0
+            best_gain = float('-inf')
+            for idx, pair in enumerate(selected_pairs):
+                gain = 0.0
+                for person in pair:
+                    gain += self.graph.edge_weights.get((extra_person, person), 0.0)
+                    gain += self.graph.edge_weights.get((person, extra_person), 0.0)
+                if gain > best_gain:
+                    best_gain = gain
+                    best_idx = idx
+            selected_pairs[best_idx].append(extra_person)
+        elif len(remaining_females) == 1 and len(remaining_males) == 0 and selected_pairs:
+            extra_person = remaining_females[0]
+            best_idx = 0
+            best_gain = float('-inf')
+            for idx, pair in enumerate(selected_pairs):
+                gain = 0.0
+                for person in pair:
+                    gain += self.graph.edge_weights.get((extra_person, person), 0.0)
+                    gain += self.graph.edge_weights.get((person, extra_person), 0.0)
+                if gain > best_gain:
+                    best_gain = gain
+                    best_idx = idx
+            selected_pairs[best_idx].append(extra_person)
         
         return selected_pairs
+
+    def _pairing_constraints_feasible(self) -> Tuple[bool, str]:
+        """检查配对模式是否可行（支持人数差1）"""
+        if not self.pairing_mode:
+            return True, ""
+        diff = abs(self.num_males - self.num_females)
+        if diff <= 1:
+            return True, ""
+        return False, f"配对模式不可行：男女人数差为{diff}（仅支持差值<=1，差1时允许一组三人）"
     
     def _get_person_preferences(self, persons: List[str]) -> Dict[str, List[str]]:
         """获取每个人的偏好列表"""
@@ -412,6 +487,48 @@ class HeuristicSolver:
                 violated_guests.append(privileged_guest)
         
         return len(violated_guests) == 0, violated_guests
+
+    def _vip_constraints_feasible(self) -> Tuple[bool, List[str]]:
+        """
+        检查VIP硬约束是否在输入偏好下可行
+        VIP至少要有一个明确喜欢对象，否则问题不可行。
+        """
+        infeasible_guests = []
+        if not self.privileged_guests:
+            return True, infeasible_guests
+
+        for privileged_guest in self.privileged_guests:
+            has_liked_person = any(src == privileged_guest for src, _ in self.graph.edges)
+            if not has_liked_person:
+                infeasible_guests.append(privileged_guest)
+
+        return len(infeasible_guests) == 0, infeasible_guests
+
+    def _generate_feasible_initial_solution(self, initial_strategy: str, max_attempts: int = 200) -> Optional[List[List[str]]]:
+        """
+        生成满足基础约束 + VIP硬约束的初始解。
+        """
+        for attempt in range(max_attempts):
+            if initial_strategy == "random" or attempt > 0:
+                candidate = self.generate_random_solution()
+            else:
+                candidate = self.generate_greedy_solution()
+
+            is_valid, _ = validate_grouping(
+                candidate, self.require_2by2, self.pairing_mode,
+                self.num_males, self.num_females, self.group_size
+            )
+            if not is_valid:
+                continue
+
+            if self.privileged_guests:
+                is_vip_satisfied, _ = self.check_privileged_constraints(candidate)
+                if not is_vip_satisfied:
+                    continue
+
+            return candidate
+
+        return None
     
     def get_neighbors(self, solution: List[List[str]]) -> List[List[List[str]]]:
         """生成邻域解（通过人员交换）"""
@@ -430,12 +547,16 @@ class HeuristicSolver:
                         person = new_solution[from_group].pop(person_idx)
                         
                         # 检查目标组是否已满
-                        max_group_size = self.group_size if to_group != self.num_groups - 1 else len(self.all_persons)
+                        max_group_size = self.group_target_sizes[to_group]
                         if len(new_solution[to_group]) < max_group_size:
                             new_solution[to_group].append(person)
                             
                             # 检查约束
-                            if self._is_valid_partial_solution(new_solution):
+                            is_valid_neighbor = self._is_valid_partial_solution(new_solution)
+                            if is_valid_neighbor and self.privileged_guests:
+                                is_valid_neighbor, _ = self.check_privileged_constraints(new_solution)
+
+                            if is_valid_neighbor:
                                 neighbors.append(new_solution)
         
         # 两点互换：交换不同组的两个人
@@ -453,7 +574,11 @@ class HeuristicSolver:
                         new_solution[group2][person2_idx] = person1
                         
                         # 检查约束
-                        if self._is_valid_partial_solution(new_solution):
+                        is_valid_neighbor = self._is_valid_partial_solution(new_solution)
+                        if is_valid_neighbor and self.privileged_guests:
+                            is_valid_neighbor, _ = self.check_privileged_constraints(new_solution)
+
+                        if is_valid_neighbor:
                             neighbors.append(new_solution)
         
         return neighbors
@@ -481,7 +606,12 @@ class HeuristicSolver:
                             if person == male_j:
                                 new_solution[j][k] = male_i
                                 break
-                        neighbors.append(new_solution)
+                        is_valid_neighbor = True
+                        if self.privileged_guests:
+                            is_valid_neighbor, _ = self.check_privileged_constraints(new_solution)
+
+                        if is_valid_neighbor:
+                            neighbors.append(new_solution)
         
         # 交换两对配对中的女性
         for i in range(self.num_groups):
@@ -502,7 +632,12 @@ class HeuristicSolver:
                             if person == female_j:
                                 new_solution[j][k] = female_i
                                 break
-                        neighbors.append(new_solution)
+                        is_valid_neighbor = True
+                        if self.privileged_guests:
+                            is_valid_neighbor, _ = self.check_privileged_constraints(new_solution)
+
+                        if is_valid_neighbor:
+                            neighbors.append(new_solution)
         
         return neighbors
     
@@ -512,7 +647,7 @@ class HeuristicSolver:
             return True
         
         for i, group in enumerate(solution):
-            max_size = self.group_size if i != self.num_groups - 1 else len(self.all_persons)
+            max_size = self.group_target_sizes[i]
             if len(group) > max_size:  # 超出组大小限制
                 return False
             
@@ -520,7 +655,7 @@ class HeuristicSolver:
             females_in_group = sum(1 for p in group if p.startswith('F'))
             
             # 如果组已满，检查性别比例
-            expected_size = self.group_size if i != self.num_groups - 1 else (len(self.all_persons) - (self.num_groups - 1) * self.group_size)
+            expected_size = self.group_target_sizes[i]
             if len(group) == expected_size:
                 if males_in_group != females_in_group:
                     return False
@@ -640,22 +775,29 @@ class HeuristicSolver:
         total_iterations = 0
         
         try:
+            pairing_feasible, pairing_message = self._pairing_constraints_feasible()
+            if not pairing_feasible:
+                return None, {
+                    "status": "infeasible",
+                    "message": pairing_message
+                }
+
+            vip_feasible, infeasible_vips = self._vip_constraints_feasible()
+            if not vip_feasible:
+                return None, {
+                    "status": "infeasible",
+                    "message": f"VIP硬约束不可行：以下嘉宾没有喜欢对象 {sorted(infeasible_vips)}"
+                }
+
             for restart in range(num_restarts):
                 if callback:
                     callback(f"第 {restart + 1}/{num_restarts} 次重启")
                 
-                # 生成初始解
-                if initial_strategy == "random":
-                    initial_solution = self.generate_random_solution()
-                else:  # greedy
-                    initial_solution = self.generate_greedy_solution()
-                
-                # 验证初始解
-                is_valid, errors = validate_grouping(initial_solution, self.require_2by2, self.pairing_mode,
-                                                   self.num_males, self.num_females, self.group_size)
-                if not is_valid:
+                # 生成满足硬约束的初始解
+                initial_solution = self._generate_feasible_initial_solution(initial_strategy)
+                if initial_solution is None:
                     if callback:
-                        callback(f"第 {restart + 1} 次重启: 初始解无效，跳过")
+                        callback(f"第 {restart + 1} 次重启: 未生成满足VIP硬约束的初始解，跳过")
                     continue
                 
                 # 选择算法
@@ -665,6 +807,13 @@ class HeuristicSolver:
                     solution, score, iterations = self.simulated_annealing(initial_solution, callback)
                 
                 total_iterations += iterations
+
+                if self.privileged_guests:
+                    is_vip_satisfied, violated_guests = self.check_privileged_constraints(solution)
+                    if not is_vip_satisfied:
+                        if callback:
+                            callback(f"第 {restart + 1} 次重启: 解不满足VIP硬约束，忽略 ({', '.join(violated_guests)})")
+                        continue
                 
                 if score > best_score:
                     best_solution = solution
@@ -685,6 +834,15 @@ class HeuristicSolver:
                         "message": "最终解无效",
                         "errors": errors
                     }
+
+                if self.privileged_guests:
+                    is_vip_satisfied, violated_guests = self.check_privileged_constraints(best_solution)
+                    if not is_vip_satisfied:
+                        return None, {
+                            "status": "invalid_solution",
+                            "message": "最终解不满足VIP硬约束",
+                            "violated_guests": violated_guests
+                        }
                 
                 return best_solution, {
                     "status": "completed",
@@ -698,7 +856,7 @@ class HeuristicSolver:
             else:
                 return None, {
                     "status": "no_solution",
-                    "message": "未找到有效解"
+                    "message": "未找到满足VIP硬约束的有效解" if self.privileged_guests else "未找到有效解"
                 }
                 
         except Exception as e:

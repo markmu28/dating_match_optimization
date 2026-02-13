@@ -190,10 +190,10 @@ python cli.py --input 嘉宾偏好.xlsx --solver ilp
 #### 基础使用
 ```bash
 # 第一轮分组：默认ranking模式，2v2分组，导出Excel
-python cli.py --input 嘉宾偏好.xlsx --export-xlsx --verbose
+python3 cli.py --input 嘉宾偏好.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --export-xlsx --verbose
 
 # 双人配对模式（12对1v1），自定义权重
-python cli.py --input 数据.xlsx --pairing-mode --first-preference-weight 3.0 --second-preference-weight 1.5 --export-xlsx
+python3 cli.py --input 数据.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --pairing-mode --first-preference-weight 3.0 --second-preference-weight 1.5 --export-xlsx
 
 # 中文偏好解析模式
 python cli.py --input 数据.xlsx --mode text --export-xlsx
@@ -220,19 +220,19 @@ python cli.py --input 嘉宾偏好.xlsx --privileged-guests M1,F3,M5,F8 --export
 python cli.py --input 嘉宾偏好.xlsx --privileged-guests M1,F3 --pairing-mode --export-xlsx
 
 # 特权嘉宾 + 第二轮分组
-python cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好.xlsx --privileged-guests M1,F2 --export-xlsx
+python3 cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --privileged-guests M1,F2 --export-xlsx
 ```
 
 #### 第二轮分组使用
 ```bash
 # 基于第一轮结果进行第二轮分组
-python cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好.xlsx --export-xlsx
+python3 cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --export-xlsx
 
 # 自定义第一轮单向喜欢的惩罚权重
-python cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好.xlsx --penalty-weight -2.0
+python3 cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --penalty-weight -2.0
 
 # 第二轮详细输出模式
-python cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好.xlsx --verbose --export-xlsx
+python3 cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --verbose --export-xlsx
 ```
 
 ## Edge Case边界测试
@@ -327,11 +327,11 @@ Excel文件需包含3列：
 
 ```bash
 # 步骤1：第一轮分组（6组2v2模式）
-python cli.py --input 嘉宾偏好_第一轮.xlsx --export-xlsx --verbose
+python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --export-xlsx --verbose
 # 输出：outputs/安排结果_第一轮.json, .csv, .xlsx
 
 # 步骤2：基于第一轮结果进行第二轮分组
-python cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好_第二轮.xlsx --export-xlsx --verbose
+python3 cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好_第二轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --export-xlsx --verbose
 # 输出：outputs/安排结果_第二轮.json, .csv, .xlsx
 
 # 步骤3：对比两轮结果
@@ -343,7 +343,7 @@ python cli.py --round-two --first-round-file "outputs/安排结果_第一轮.jso
 
 ```bash
 # 双人配对模式（12对1v1模式）
-python cli.py --input 嘉宾偏好_第三轮.xlsx --pairing-mode --export-xlsx --verbose
+python3 cli.py --input 嘉宾偏好_第三轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --pairing-mode --export-xlsx --verbose
 # 输出：outputs/安排结果_双人配对.json, .csv, .xlsx
 
 # 查看配对结果
@@ -515,11 +515,11 @@ pip install -r requirements.txt
 
 ```bash
 # 步骤1：第一轮分组（6组2v2模式）
-python3 cli.py --input 嘉宾偏好_第一轮.xlsx --export-xlsx --verbose --privileged-guests M1
+python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --export-xlsx --verbose --privileged-guests M1,F1
 # 输出：outputs/安排结果_第一轮.json, .csv, .xlsx
 
 # 步骤2：基于第一轮结果进行第二轮分组
-python3 cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好_第二轮.xlsx --export-xlsx --verbose --privileged-guests M1
+python3 cli.py --round-two --first-round-file "outputs/安排结果_第一轮.json" --input 嘉宾偏好_第二轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --export-xlsx --verbose --privileged-guests M1,F1
 # 输出：outputs/安排结果_第二轮.json, .csv, .xlsx
 ```
 
@@ -527,5 +527,46 @@ python3 cli.py --round-two --first-round-file "outputs/安排结果_第一轮.js
 
 ```bash
 # 双人配对模式（12对1v1模式）
-python3 cli.py --input 嘉宾偏好_第三轮.xlsx --pairing-mode --export-xlsx --verbose --privileged-guests M1
+python3 cli.py --input 嘉宾偏好_第三轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --pairing-mode --export-xlsx --verbose --privileged-guests M1,F1
 # 输出：outputs/安排结果_双人配对.json, .csv, .xlsx
+```
+
+## 新增实战范例（嘉宾名单与缺席）
+
+### 1) 使用单独的嘉宾名单Excel（推荐）
+
+名单文件建议使用 `嘉宾名单` sheet，包含列：
+- 必填：`嘉宾类型`、`编号`、`姓名`
+- 可选：`是否到场`（是/否，留空默认为到场）
+
+```bash
+python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --guest-map-sheet 嘉宾名单 --export-xlsx
+```
+
+### 2) 现场临时缺席（支持姓名或ID混输）
+
+```bash
+python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --absent-guests 张三,F8,M2 --export-xlsx --verbose
+```
+
+### 3) 缺席后仍强制2男2女（不可行就报错）
+
+默认行为是：如果缺席导致2男2女不可行，会自动放宽约束并尽量均匀分组。  
+如果你希望“宁可失败也不放宽”，加 `--strict-two-by-two`：
+
+```bash
+python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --absent-guests 李二 --strict-two-by-two
+```
+
+### 4) 特权嘉宾用姓名指定
+
+`--privileged-guests` 现在支持姓名或ID（建议名单里姓名唯一）：
+
+```bash
+python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --privileged-guests 王五,F3 --export-xlsx
+```
+
+### 5) 模板文件
+
+项目根目录已提供可直接填写的模板：
+- `嘉宾名单模板.xlsx`

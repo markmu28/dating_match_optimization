@@ -322,19 +322,33 @@ def validate_grouping(groups: List[List[str]], require_2by2: bool = True, pairin
         if len(groups) != expected_pairs:
             errors.append(f"配对数量应为{expected_pairs}，实际为{len(groups)}")
         
-        # 检查每对人数
+        # 奇数总人数时，允许恰好1组三人（其余仍为1v1）
+        allow_one_triple = (total_people % 2 == 1)
+        triple_count = 0
+
         for i, pair in enumerate(groups):
-            if len(pair) != 2:
-                errors.append(f"第{i+1}对人数应为2，实际为{len(pair)}")
-            else:
-                # 检查每对是否为一男一女
-                males = [m for m in pair if m.startswith('M')]
-                females = [m for m in pair if m.startswith('F')]
-                
+            group_size_actual = len(pair)
+            males = [m for m in pair if m.startswith('M')]
+            females = [m for m in pair if m.startswith('F')]
+
+            if group_size_actual == 2:
                 if len(males) != 1:
                     errors.append(f"第{i+1}对男性人数应为1，实际为{len(males)}")
                 if len(females) != 1:
                     errors.append(f"第{i+1}对女性人数应为1，实际为{len(females)}")
+            elif group_size_actual == 3 and allow_one_triple:
+                triple_count += 1
+                # 3人组必须是2:1或1:2
+                if not ((len(males) == 2 and len(females) == 1) or (len(males) == 1 and len(females) == 2)):
+                    errors.append(f"第{i+1}组三人组性别比例应为2:1或1:2，实际为{len(males)}:{len(females)}")
+            else:
+                expected_msg = "2（或奇数总人数时允许1组为3）" if allow_one_triple else "2"
+                errors.append(f"第{i+1}组人数应为{expected_msg}，实际为{group_size_actual}")
+
+        if allow_one_triple and triple_count > 1:
+            errors.append(f"奇数总人数时最多允许1组三人，实际为{triple_count}组")
+        if not allow_one_triple and triple_count > 0:
+            errors.append("偶数总人数时不允许三人组")
     else:
         # 传统分组模式验证
         expected_groups = (total_people + group_size - 1) // group_size  # 向上取整
@@ -342,14 +356,23 @@ def validate_grouping(groups: List[List[str]], require_2by2: bool = True, pairin
             errors.append(f"分组数量应为{expected_groups}，实际为{len(groups)}")
         
         # 检查每组人数
-        for i, group in enumerate(groups):
-            # 最后一组可以人数较少
-            if i == len(groups) - 1:  # 最后一组
-                if len(group) == 0:
-                    errors.append(f"第{i+1}组不能为空")
-            else:  # 非最后一组
-                if len(group) != group_size:
-                    errors.append(f"第{i+1}组人数应为{group_size}，实际为{len(group)}")
+        if require_2by2:
+            # 2by2模式：保持原有规则（非最后一组固定group_size）
+            for i, group in enumerate(groups):
+                if i == len(groups) - 1:  # 最后一组
+                    if len(group) == 0:
+                        errors.append(f"第{i+1}组不能为空")
+                else:  # 非最后一组
+                    if len(group) != group_size:
+                        errors.append(f"第{i+1}组人数应为{group_size}，实际为{len(group)}")
+        else:
+            # 放宽模式：按均匀分配检查（避免4+1这类极端尾组）
+            if expected_groups > 0:
+                min_size = total_people // expected_groups
+                max_size = min_size + (1 if total_people % expected_groups else 0)
+                for i, group in enumerate(groups):
+                    if len(group) < min_size or len(group) > max_size:
+                        errors.append(f"第{i+1}组人数应在{min_size}-{max_size}之间，实际为{len(group)}")
     
     # 检查人员重复
     all_members = []

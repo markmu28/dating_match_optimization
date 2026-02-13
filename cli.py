@@ -10,6 +10,7 @@ import sys
 import os
 import time
 from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple
 
 # 强制输出实时刷新
 sys.stdout.reconfigure(line_buffering=True)
@@ -72,6 +73,17 @@ def parse_arguments():
                        choices=['text', 'ranking'],
                        default='ranking',
                        help='输入数据模式：ranking=排名ID模式（默认），text=中文描述解析')
+
+    parser.add_argument('--guest-map-file',
+                       help='嘉宾名单文件路径（可选，默认使用input文件），用于姓名映射和到场状态')
+
+    parser.add_argument('--guest-map-sheet',
+                       default='嘉宾名单',
+                       help='嘉宾名单sheet名称（默认: 嘉宾名单）')
+
+    parser.add_argument('--absent-guests',
+                       type=str,
+                       help='缺席嘉宾列表，逗号分隔，支持姓名或ID（如：张三,F8,M3）')
     
     # Ranking模式权重设置
     parser.add_argument('--first-preference-weight',
@@ -89,6 +101,10 @@ def parse_arguments():
                        type=lambda x: x.lower() in ['true', '1', 'yes'],
                        default=True,
                        help='是否强制每组2男2女（默认: true）')
+
+    parser.add_argument('--strict-two-by-two',
+                       action='store_true',
+                       help='严格保持2男2女，若人数/性别不满足则直接报错（默认自动放宽）')
     
     parser.add_argument('--pairing-mode',
                        action='store_true',
@@ -216,6 +232,170 @@ def detect_guest_counts(data):
     return num_males, num_females
 
 
+def build_guest_ids_from_data(data: List[Dict]) -> Set[str]:
+    """从原始数据行构建嘉宾ID集合（M1/F1格式）"""
+    guest_ids = set()
+    for row in data:
+        guest_type = str(row.get('嘉宾类型', '')).strip()
+        guest_no = row.get('编号')
+        if guest_type in ('男', '女') and isinstance(guest_no, (int, str)) and str(guest_no).isdigit():
+            guest_ids.add(f"{'M' if guest_type == '男' else 'F'}{int(guest_no)}")
+    return guest_ids
+
+
+def build_guest_name_index(guest_profiles: List[Dict]) -> Tuple[Dict[str, str], Dict[str, List[str]]]:
+    """构建 guest_id -> name 和 name -> [guest_id] 索引"""
+    guest_id_to_name = {}
+    name_to_guest_ids = {}
+    for item in guest_profiles:
+        guest_id = item.get('guest_id')
+        guest_name = str(item.get('guest_name', '')).strip()
+        if not guest_id or not guest_name:
+            continue
+        guest_id_to_name[guest_id] = guest_name
+        name_to_guest_ids.setdefault(guest_name, []).append(guest_id)
+    return guest_id_to_name, name_to_guest_ids
+
+
+def resolve_guest_tokens(raw_tokens: List[str], valid_guest_ids: Set[str], name_to_guest_ids: Dict[str, List[str]]) -> Tuple[Set[str], List[str]]:
+    """
+    解析姓名/ID混合输入，返回标准化guest_id集合
+    支持 token: M1/F3 或精确姓名
+    """
+    resolved = set()
+    warnings = []
+
+    for token in raw_tokens:
+        token = str(token).strip()
+        if not token:
+            continue
+
+        token_upper = token.upper()
+        if len(token_upper) >= 2 and token_upper[0] in ('M', 'F') and token_upper[1:].isdigit():
+            guest_id = f"{token_upper[0]}{int(token_upper[1:])}"
+            if guest_id in valid_guest_ids:
+                resolved.add(guest_id)
+            else:
+                warnings.append(f"未找到嘉宾ID: {token}")
+            continue
+
+        candidate_ids = [gid for gid in name_to_guest_ids.get(token, []) if gid in valid_guest_ids]
+        if len(candidate_ids) == 1:
+            resolved.add(candidate_ids[0])
+        elif len(candidate_ids) > 1:
+            warnings.append(f"姓名重名无法唯一匹配: {token} -> {candidate_ids}")
+        else:
+            warnings.append(f"无法识别嘉宾: {token}")
+
+    return resolved, warnings
+
+
+def normalize_ranking_data_for_attendance(data: List[Dict], absent_guest_ids: Set[str]) -> Tuple[List[Dict], Dict[str, str], Dict[str, str], List[str]]:
+    """
+    对ranking数据做缺席过滤 + 性别内重编号（保证编号连续）
+
+    Returns:
+        normalized_data: 过滤并重编号后的数据
+        old_to_new_guest_id: 例如 {"M8":"M7"}
+        new_to_old_guest_id: 例如 {"M7":"M8"}
+        warnings: 处理告警
+    """
+    warnings = []
+    subject_guest_ids = []
+
+    for row in data:
+        guest_type = str(row.get('嘉宾类型', '')).strip()
+        guest_no = row.get('编号')
+        if guest_type not in ('男', '女') or not str(guest_no).isdigit():
+            continue
+        old_guest_id = f"{'M' if guest_type == '男' else 'F'}{int(guest_no)}"
+        if old_guest_id in absent_guest_ids:
+            continue
+        subject_guest_ids.append(old_guest_id)
+
+    present_male_old = sorted([int(g[1:]) for g in subject_guest_ids if g.startswith('M')])
+    present_female_old = sorted([int(g[1:]) for g in subject_guest_ids if g.startswith('F')])
+
+    old_to_new_guest_id = {}
+    for idx, old_no in enumerate(present_male_old, start=1):
+        old_to_new_guest_id[f"M{old_no}"] = f"M{idx}"
+    for idx, old_no in enumerate(present_female_old, start=1):
+        old_to_new_guest_id[f"F{old_no}"] = f"F{idx}"
+
+    new_to_old_guest_id = {v: k for k, v in old_to_new_guest_id.items()}
+
+    def map_target(target_raw, subject_gender: str) -> str:
+        if target_raw is None:
+            return ''
+        target_str = str(target_raw).strip()
+        if not target_str:
+            return ''
+
+        target_guest_id = None
+        if target_str[0].upper() in ('M', 'F') and target_str[1:].isdigit():
+            target_guest_id = f"{target_str[0].upper()}{int(target_str[1:])}"
+        else:
+            try:
+                target_no = int(float(target_str))
+                target_prefix = 'F' if subject_gender == '男' else 'M'
+                target_guest_id = f"{target_prefix}{target_no}"
+            except Exception:
+                warnings.append(f"无法解析目标ID: {target_raw}")
+                return ''
+
+        if target_guest_id in absent_guest_ids:
+            return ''
+        if target_guest_id not in old_to_new_guest_id:
+            return ''
+        return old_to_new_guest_id[target_guest_id]
+
+    normalized_data = []
+    for row in data:
+        guest_type = str(row.get('嘉宾类型', '')).strip()
+        guest_no = row.get('编号')
+        if guest_type not in ('男', '女') or not str(guest_no).isdigit():
+            continue
+
+        old_guest_id = f"{'M' if guest_type == '男' else 'F'}{int(guest_no)}"
+        if old_guest_id in absent_guest_ids:
+            continue
+        if old_guest_id not in old_to_new_guest_id:
+            continue
+
+        new_row = dict(row)
+        new_subject = old_to_new_guest_id[old_guest_id]
+        new_row['编号'] = int(new_subject[1:])
+
+        for col in ['对象1ID', '对象2ID']:
+            mapped_target = map_target(new_row.get(col, ''), guest_type)
+            if mapped_target:
+                new_row[col] = int(mapped_target[1:])
+            else:
+                new_row[col] = ''
+
+        normalized_data.append(new_row)
+
+    return normalized_data, old_to_new_guest_id, new_to_old_guest_id, warnings
+
+
+def convert_guest_ids_to_internal(guest_ids: Set[str], old_to_new_guest_id: Dict[str, str]) -> Set[str]:
+    """将外部ID集合转换为内部重编号ID集合"""
+    result = set()
+    for guest_id in guest_ids:
+        if guest_id in old_to_new_guest_id:
+            result.add(old_to_new_guest_id[guest_id])
+    return result
+
+
+def remap_penalty_edges(penalties: Set[Tuple[str, str]], old_to_new_guest_id: Dict[str, str]) -> Set[Tuple[str, str]]:
+    """将第一轮惩罚边按新编号映射，不在当前出席集合中的边会被丢弃"""
+    remapped = set()
+    for src, dst in penalties:
+        if src in old_to_new_guest_id and dst in old_to_new_guest_id:
+            remapped.add((old_to_new_guest_id[src], old_to_new_guest_id[dst]))
+    return remapped
+
+
 def main():
     """主函数"""
     # 打印横幅
@@ -269,6 +449,75 @@ def main():
             print("⚠️  读取警告:")
             for warning in io_warnings:
                 print(f"   {warning}")
+
+        # 1.1 读取嘉宾名单（姓名映射 + 到场状态）
+        guest_map_file = args.guest_map_file or args.input
+        guest_profiles = []
+        guest_map_warnings = []
+        try:
+            guest_profiles, guest_map_warnings = io_handler.read_guest_mapping(guest_map_file, args.guest_map_sheet)
+        except Exception as e:
+            guest_map_warnings.append(str(e))
+
+        if guest_map_warnings and args.verbose:
+            print("⚠️  嘉宾名单读取提示:")
+            for warning in guest_map_warnings[:10]:
+                print(f"   {warning}")
+
+        guest_id_to_name, name_to_guest_ids = build_guest_name_index(guest_profiles)
+        all_guest_ids_raw = build_guest_ids_from_data(data)
+        if guest_id_to_name:
+            print_flush(f"🪪 已加载姓名映射: {len(guest_id_to_name)} 人（来源: {guest_map_file}#{args.guest_map_sheet}）")
+
+        # 1.2 解析缺席名单（名单中的“是否到场=否” + CLI传入）
+        absent_from_roster = {
+            p['guest_id'] for p in guest_profiles
+            if not p.get('is_present', True) and p.get('guest_id') in all_guest_ids_raw
+        }
+
+        absent_from_cli = set()
+        if args.absent_guests:
+            raw_absent_tokens = [t.strip() for t in args.absent_guests.split(',') if t.strip()]
+            absent_from_cli, absent_parse_warnings = resolve_guest_tokens(
+                raw_absent_tokens, all_guest_ids_raw, name_to_guest_ids
+            )
+            for warning in absent_parse_warnings:
+                print(f"⚠️  缺席名单解析: {warning}")
+
+        absent_guest_ids = absent_from_roster | absent_from_cli
+        present_guest_ids_raw = set(all_guest_ids_raw) - set(absent_guest_ids)
+        if absent_guest_ids:
+            absent_display = []
+            for guest_id in sorted(absent_guest_ids):
+                guest_name = guest_id_to_name.get(guest_id)
+                absent_display.append(f"{guest_id}({guest_name})" if guest_name else guest_id)
+            print_flush(f"🚫 缺席嘉宾: {', '.join(absent_display)}")
+
+        # 默认不变更编号；ranking缺席时会重编号为连续ID
+        old_to_new_guest_id = {gid: gid for gid in all_guest_ids_raw}
+        new_to_old_guest_id = {gid: gid for gid in all_guest_ids_raw}
+
+        if args.mode == 'ranking':
+            if absent_guest_ids:
+                data, old_to_new_guest_id, new_to_old_guest_id, normalize_warnings = normalize_ranking_data_for_attendance(data, absent_guest_ids)
+                if normalize_warnings and args.verbose:
+                    print("⚠️  缺席重编号提示:")
+                    for warning in normalize_warnings[:10]:
+                        print(f"   {warning}")
+                print_flush(f"🚫 已处理缺席嘉宾: {len(absent_guest_ids)} 人")
+                print_flush("🔁 已对到场嘉宾重新编号（按性别各自连续）")
+        else:
+            if absent_guest_ids:
+                print("❌ text模式暂不支持缺席重编号，请使用ranking模式处理缺席场景")
+                return
+
+        if not data:
+            print("❌ 过滤缺席后无有效数据，无法求解")
+            return
+
+        # 第二轮惩罚边按新编号映射（缺席后可能发生重编号）
+        if args.round_two and first_round_penalties:
+            first_round_penalties = remap_penalty_edges(first_round_penalties, old_to_new_guest_id)
         
         # 自动检测人数
         num_males, num_females = detect_guest_counts(data)
@@ -278,31 +527,42 @@ def main():
         total_people = num_males + num_females
         if args.pairing_mode:
             expected_pairs = min(num_males, num_females)
-            print_flush(f"🔗 配对模式: 将生成{expected_pairs}对1v1配对")
+            diff = abs(num_males - num_females)
+            if total_people % 2 == 1 and diff == 1:
+                print_flush(f"🔗 配对模式: 将生成{expected_pairs}组（其中1组三人，其余1v1）")
+            else:
+                print_flush(f"🔗 配对模式: 将生成{expected_pairs}对1v1配对")
         else:
             num_groups = (total_people + args.group_size - 1) // args.group_size  # 向上取整
             print_flush(f"👥 分组模式: 将生成{num_groups}组，每组最多{args.group_size}人")
         
-        # 解析特权嘉宾
+        # 根据出席情况自动放宽2男2女约束
+        effective_two_by_two = args.two_by_two
+        if args.two_by_two and not args.pairing_mode:
+            if args.group_size % 2 != 0:
+                if args.strict_two_by_two:
+                    print(f"❌ strict-two-by-two 开启时，每组人数必须为偶数，当前 group-size={args.group_size}")
+                    return
+                print(f"⚠️  group-size={args.group_size} 为奇数，自动放宽2男2女硬约束")
+                effective_two_by_two = False
+            elif num_males != num_females:
+                if args.strict_two_by_two:
+                    print(f"❌ strict-two-by-two 开启时，男女人数必须相等；当前为 {num_males}:{num_females}")
+                    return
+                print(f"⚠️  当前男女人数不相等（{num_males}:{num_females}），自动放宽2男2女硬约束")
+                effective_two_by_two = False
+
+        # 解析特权嘉宾（支持姓名或ID）
         privileged_guests = set()
         if args.privileged_guests:
-            privileged_list = [g.strip().upper() for g in args.privileged_guests.split(',') if g.strip()]
-            for guest in privileged_list:
-                # 验证嘉宾ID格式
-                if guest.startswith('M') and guest[1:].isdigit():
-                    guest_id = int(guest[1:])
-                    if 1 <= guest_id <= num_males:
-                        privileged_guests.add(guest)
-                    else:
-                        print(f"⚠️  无效的特权嘉宾ID: {guest}（男性ID范围: M1-M{num_males}）")
-                elif guest.startswith('F') and guest[1:].isdigit():
-                    guest_id = int(guest[1:])
-                    if 1 <= guest_id <= num_females:
-                        privileged_guests.add(guest)
-                    else:
-                        print(f"⚠️  无效的特权嘉宾ID: {guest}（女性ID范围: F1-F{num_females}）")
-                else:
-                    print(f"⚠️  无效的特权嘉宾ID格式: {guest}（应为M1-M{num_males}或F1-F{num_females}）")
+            raw_privileged_tokens = [g.strip() for g in args.privileged_guests.split(',') if g.strip()]
+            privileged_raw_ids, privileged_parse_warnings = resolve_guest_tokens(
+                raw_privileged_tokens, present_guest_ids_raw, name_to_guest_ids
+            )
+            for warning in privileged_parse_warnings:
+                print(f"⚠️  特权嘉宾解析: {warning}")
+
+            privileged_guests = convert_guest_ids_to_internal(privileged_raw_ids, old_to_new_guest_id)
             
             if privileged_guests:
                 print_flush(f"🌟 设置特权嘉宾: {', '.join(sorted(privileged_guests))}（共{len(privileged_guests)}人）")
@@ -414,7 +674,7 @@ def main():
             # 优先使用启发式求解器（更稳定）
             print_flush("🔧 使用启发式求解器...")
             heur_solver = HeuristicSolver(
-                graph, args.two_by_two, args.seed, args.max_iter, 
+                graph, effective_two_by_two, args.seed, args.max_iter, 
                 pairing_mode=args.pairing_mode,
                 num_males=num_males, num_females=num_females, group_size=args.group_size,
                 privileged_guests=privileged_guests
@@ -432,7 +692,7 @@ def main():
                 print("🔧 启发式求解失败，尝试ILP求解器...")
                 if not args.pairing_mode:  # ILP求解器暂不支持配对模式
                     try:
-                        ilp_solver = ILPSolver(graph, args.two_by_two, args.ilp_time_limit,
+                        ilp_solver = ILPSolver(graph, effective_two_by_two, args.ilp_time_limit,
                                              num_males=num_males, num_females=num_females, group_size=args.group_size,
                                              privileged_guests=privileged_guests)
                         if ilp_solver.pulp_available:
@@ -451,7 +711,7 @@ def main():
             if args.pairing_mode:
                 print("❌ ILP求解器不支持配对模式，自动切换到启发式求解器")
                 heur_solver = HeuristicSolver(
-                    graph, args.two_by_two, args.seed, args.max_iter,
+                    graph, effective_two_by_two, args.seed, args.max_iter,
                     pairing_mode=args.pairing_mode,
                     num_males=num_males, num_females=num_females, group_size=args.group_size,
                     privileged_guests=privileged_guests
@@ -465,7 +725,7 @@ def main():
                 solve_info['solver_used'] = 'Heuristic (Pairing mode)'
             else:
                 try:
-                    ilp_solver = ILPSolver(graph, args.two_by_two, args.ilp_time_limit,
+                    ilp_solver = ILPSolver(graph, effective_two_by_two, args.ilp_time_limit,
                                          num_males=num_males, num_females=num_females, group_size=args.group_size,
                                          privileged_guests=privileged_guests)
                     solution, solve_info = ilp_solver.solve_with_callback(progress_callback)
@@ -474,7 +734,7 @@ def main():
                     print("❌ ILP求解器出错: " + str(e))
                     print("🔧 自动回退到启发式求解器...")
                     heur_solver = HeuristicSolver(
-                        graph, args.two_by_two, args.seed, args.max_iter,
+                        graph, effective_two_by_two, args.seed, args.max_iter,
                         pairing_mode=args.pairing_mode,
                         num_males=num_males, num_females=num_females, group_size=args.group_size,
                         privileged_guests=privileged_guests
@@ -490,7 +750,7 @@ def main():
         else:  # heuristic
             print("\n🎯 使用启发式求解器...")
             heur_solver = HeuristicSolver(
-                graph, args.two_by_two, args.seed, args.max_iter,
+                graph, effective_two_by_two, args.seed, args.max_iter,
                 pairing_mode=args.pairing_mode,
                 num_males=num_males, num_females=num_females, group_size=args.group_size,
                 privileged_guests=privileged_guests
@@ -518,7 +778,7 @@ def main():
             print(f"求解详情: {solve_info}")
         
         # 6. 验证分组方案
-        is_valid, validation_errors = validate_grouping(solution, args.two_by_two, args.pairing_mode,
+        is_valid, validation_errors = validate_grouping(solution, effective_two_by_two, args.pairing_mode,
                                                        num_males, num_females, args.group_size)
         if not is_valid:
             print(f"\n⚠️  分组方案验证失败:")
@@ -580,6 +840,17 @@ def main():
         # 9. 导出结果
         print(f"\n💾 正在导出结果...")
         os.makedirs(args.output_dir, exist_ok=True)
+
+        # 构建展示用姓名映射（内部ID -> 姓名 / 原始ID）
+        guest_display_map = {}
+        for internal_guest_id, old_guest_id in new_to_old_guest_id.items():
+            guest_name = guest_id_to_name.get(old_guest_id)
+            if not guest_name:
+                continue
+            if old_guest_id != internal_guest_id:
+                guest_display_map[internal_guest_id] = f"{guest_name}/原{old_guest_id}"
+            else:
+                guest_display_map[internal_guest_id] = guest_name
         
         # 文件名后缀
         if args.pairing_mode:
@@ -600,18 +871,18 @@ def main():
         
         # 导出JSON
         json_file = os.path.join(args.output_dir, f'安排结果{file_suffix}.json')
-        io_handler.export_results_to_json(stats, json_file, privileged_info=privileged_info)
+        io_handler.export_results_to_json(stats, json_file, privileged_info=privileged_info, guest_display_map=guest_display_map)
         print(f"✅ JSON结果已保存: {json_file}")
         
         # 导出CSV
         csv_file = os.path.join(args.output_dir, f'安排结果{file_suffix}.csv')
-        io_handler.export_results_to_csv(stats, csv_file, privileged_info=privileged_info)
+        io_handler.export_results_to_csv(stats, csv_file, privileged_info=privileged_info, guest_display_map=guest_display_map)
         print(f"✅ CSV结果已保存: {csv_file}")
         
         # 导出Excel（可选）
         if args.export_xlsx:
             excel_file = os.path.join(args.output_dir, f'安排结果{file_suffix}.xlsx')
-            io_handler.export_results_to_excel(stats, excel_file, privileged_info=privileged_info)
+            io_handler.export_results_to_excel(stats, excel_file, privileged_info=privileged_info, guest_display_map=guest_display_map)
             print(f"✅ Excel结果已保存: {excel_file}")
         
         print(f"\n🎊 任务完成! 总用时 {time.time() - start_time:.2f} 秒")
