@@ -74,6 +74,7 @@ python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-fi
   - 必填：`嘉宾类型`、`编号`、`姓名`
   - 可选：`英文名`、`别名`（多个别名可用逗号分隔）
   - 可选：`是否到场`（是/否，空值默认到场）
+  - 可选：`是否VIP`（是/否，空值默认非VIP）
 - 用途：姓名展示、姓名/ID 混合输入解析（如 VIP、缺席名单）
 
 ## CLI 参数
@@ -96,7 +97,7 @@ python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-fi
 - `--strict-two-by-two`：严格模式；人数或性别不满足时直接报错（默认自动放宽）
 - `--pairing-mode`：配对模式（1v1；奇数总人数且男女差 1 时允许 1 组三人）
 - `--group-size`：常规分组时每组目标人数（默认 `4`）
-- `--privileged-guests`：VIP 列表，逗号分隔，支持姓名或 ID
+- `--privileged-guests`：可选追加VIP列表，逗号分隔，支持姓名或 ID（默认先读取名单 `是否VIP`）
 
 ### 第二轮参数
 
@@ -132,6 +133,7 @@ python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-fi
 - `text` 模式暂不支持缺席重编号：使用缺席场景请优先 `ranking` 模式。
 - 配对模式可行性：仅支持男女差值 `<= 1`；差值为 `1` 且总人数为奇数时，允许 1 组三人。
 - VIP 硬约束：VIP 必须与至少一个自己喜欢的人同组；若输入偏好本身不可行会直接失败。
+- VIP来源：默认读取 `嘉宾名单` 的 `是否VIP` 列；命令行 `--privileged-guests` 会与名单VIP合并。
 - 偏好主体/目标姓名匹配：支持中文名/英文名/别名；若重名无法唯一匹配会给出告警并按不可识别处理。
 
 ## 输出文件
@@ -156,10 +158,10 @@ python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-fi
 python3 cli.py --round-two --first-round-file outputs/安排结果_第一轮.json --input 嘉宾偏好_第二轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --export-xlsx --verbose
 ```
 
-### 双人配对（第三轮）
+### 双人配对（第三轮，名单VIP自动生效）
 
 ```bash
-python3 cli.py --input 嘉宾偏好_第三轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --pairing-mode --export-xlsx --verbose --privileged-guests M1,F1
+python3 cli.py --input 嘉宾偏好_第三轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --pairing-mode --export-xlsx --verbose
 ```
 
 ### 指定名单 sheet
@@ -180,7 +182,7 @@ python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-fi
 python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --absent-guests 李二 --strict-two-by-two --export-xlsx
 ```
 
-### VIP 使用姓名
+### VIP 使用姓名（临时追加）
 
 ```bash
 python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-file 嘉宾名单.xlsx --privileged-guests 王五,F3 --export-xlsx

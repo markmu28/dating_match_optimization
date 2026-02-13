@@ -296,6 +296,7 @@ class DataIO:
         期望列：
         - 必需：嘉宾类型, 编号, 姓名
         - 可选：是否到场（支持 是/否, true/false, 1/0, Y/N, 出席/缺席）
+        - 可选：是否VIP（支持 是/否, true/false, 1/0, VIP/普通）
         - 可选：英文名, 别名（多个别名可用逗号分隔）
         """
         warnings = []
@@ -321,6 +322,7 @@ class DataIO:
 
             expected_required = ['嘉宾类型', '编号', '姓名']
             optional_candidates = ['是否到场', '到场', '出席', '状态']
+            vip_candidates = ['是否VIP', 'VIP', '特权', '重要嘉宾']
             english_name_candidates = ['英文名', 'EnglishName', 'English Name', '英文姓名', '英文']
             alias_candidates = ['别名', '昵称', 'Alias', 'Aliases', '备用名']
             actual_columns = df.columns.tolist()
@@ -352,6 +354,17 @@ class DataIO:
 
             if attendance_col:
                 column_mapping[attendance_col] = '是否到场'
+
+            vip_col = None
+            for candidate in vip_candidates:
+                for actual in actual_columns:
+                    if column_matches(actual, candidate):
+                        vip_col = actual
+                        break
+                if vip_col:
+                    break
+            if vip_col:
+                column_mapping[vip_col] = '是否VIP'
 
             english_name_col = None
             for candidate in english_name_candidates:
@@ -406,6 +419,21 @@ class DataIO:
                             is_present = True
                             warnings.append(f"嘉宾名单第{i+2}行: 无法识别到场状态 '{attendance_raw}'，按到场处理")
 
+                    vip_raw = row.get('是否VIP', '')
+                    if pd.isna(vip_raw) or str(vip_raw).strip() == '':
+                        is_vip = False
+                    else:
+                        v_vip = str(vip_raw).strip().lower()
+                        true_vip_values = {'是', 'y', 'yes', 'true', '1', 'vip', '特权', '重要'}
+                        false_vip_values = {'否', 'n', 'no', 'false', '0', '普通', '非vip'}
+                        if v_vip in true_vip_values:
+                            is_vip = True
+                        elif v_vip in false_vip_values:
+                            is_vip = False
+                        else:
+                            is_vip = False
+                            warnings.append(f"嘉宾名单第{i+2}行: 无法识别VIP状态 '{vip_raw}'，按非VIP处理")
+
                     english_name = str(row.get('英文名', '')).strip()
                     if english_name.lower() == 'nan':
                         english_name = ''
@@ -424,6 +452,7 @@ class DataIO:
                         'english_name': english_name,
                         'aliases': alias_tokens,
                         'is_present': is_present,
+                        'is_vip': is_vip,
                     })
                 except Exception as e:
                     warnings.append(f"嘉宾名单第{i+2}行处理失败: {str(e)}")

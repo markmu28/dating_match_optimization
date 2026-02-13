@@ -101,47 +101,6 @@
     {
       "group_id": 3,
       "members": [
-        "F1",
-        "F9",
-        "M10",
-        "M6"
-      ],
-      "members_display": [
-        "F1(林雨桐)",
-        "F9(彭思妍/原F10)",
-        "M10(陈奕辰)",
-        "M6(吴泽宇)"
-      ],
-      "total_score": 7.0,
-      "single_preferences_count": 0,
-      "mutual_preferences_count": 2,
-      "single_preferences": [],
-      "mutual_preferences": [
-        {
-          "members": [
-            "F1",
-            "M6"
-          ],
-          "members_display": [
-            "F1(林雨桐)",
-            "M6(吴泽宇)"
-          ]
-        },
-        {
-          "members": [
-            "F9",
-            "M10"
-          ],
-          "members_display": [
-            "F9(彭思妍/原F10)",
-            "M10(陈奕辰)"
-          ]
-        }
-      ]
-    },
-    {
-      "group_id": 4,
-      "members": [
         "F7",
         "F8",
         "M4",
@@ -183,6 +142,47 @@
         }
       ],
       "mutual_preferences": []
+    },
+    {
+      "group_id": 4,
+      "members": [
+        "F1",
+        "F9",
+        "M10",
+        "M6"
+      ],
+      "members_display": [
+        "F1(林雨桐)",
+        "F9(彭思妍/原F10)",
+        "M10(陈奕辰)",
+        "M6(吴泽宇)"
+      ],
+      "total_score": 7.0,
+      "single_preferences_count": 0,
+      "mutual_preferences_count": 2,
+      "single_preferences": [],
+      "mutual_preferences": [
+        {
+          "members": [
+            "F1",
+            "M6"
+          ],
+          "members_display": [
+            "F1(林雨桐)",
+            "M6(吴泽宇)"
+          ]
+        },
+        {
+          "members": [
+            "F9",
+            "M10"
+          ],
+          "members_display": [
+            "F9(彭思妍/原F10)",
+            "M10(陈奕辰)"
+          ]
+        }
+      ]
     },
     {
       "group_id": 5,

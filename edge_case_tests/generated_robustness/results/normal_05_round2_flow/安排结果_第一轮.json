@@ -1,0 +1,252 @@
+{
+  "meta": {
+    "total_groups": 5,
+    "total_score": 33.0,
+    "avg_group_score": 6.6,
+    "total_single_preferences": 12,
+    "total_mutual_preferences": 5,
+    "single_hit_rate": 0.42857142857142855,
+    "mutual_hit_rate": 0.8333333333333334
+  },
+  "groups": [
+    {
+      "group_id": 1,
+      "members": [
+        "F10",
+        "F6",
+        "M6",
+        "M9"
+      ],
+      "members_display": [
+        "F10(彭思妍)",
+        "F6(宋可欣)",
+        "M6(吴泽宇)",
+        "M9(冯博文)"
+      ],
+      "total_score": 5.0,
+      "single_preferences_count": 2,
+      "mutual_preferences_count": 1,
+      "single_preferences": [
+        {
+          "from": "F10",
+          "to": "M6",
+          "from_display": "F10(彭思妍)",
+          "to_display": "M6(吴泽宇)"
+        },
+        {
+          "from": "M9",
+          "to": "F6",
+          "from_display": "M9(冯博文)",
+          "to_display": "F6(宋可欣)"
+        }
+      ],
+      "mutual_preferences": [
+        {
+          "members": [
+            "F6",
+            "M6"
+          ],
+          "members_display": [
+            "F6(宋可欣)",
+            "M6(吴泽宇)"
+          ]
+        }
+      ]
+    },
+    {
+      "group_id": 2,
+      "members": [
+        "F2",
+        "F9",
+        "M4",
+        "M5"
+      ],
+      "members_display": [
+        "F2(何诗涵)",
+        "F9(曹雅楠)",
+        "M4(李俊熙)",
+        "M5(周嘉铭)"
+      ],
+      "total_score": 7.0,
+      "single_preferences_count": 3,
+      "mutual_preferences_count": 1,
+      "single_preferences": [
+        {
+          "from": "F9",
+          "to": "M5",
+          "from_display": "F9(曹雅楠)",
+          "to_display": "M5(周嘉铭)"
+        },
+        {
+          "from": "F9",
+          "to": "M4",
+          "from_display": "F9(曹雅楠)",
+          "to_display": "M4(李俊熙)"
+        },
+        {
+          "from": "F2",
+          "to": "M5",
+          "from_display": "F2(何诗涵)",
+          "to_display": "M5(周嘉铭)"
+        }
+      ],
+      "mutual_preferences": [
+        {
+          "members": [
+            "F2",
+            "M4"
+          ],
+          "members_display": [
+            "F2(何诗涵)",
+            "M4(李俊熙)"
+          ]
+        }
+      ]
+    },
+    {
+      "group_id": 3,
+      "members": [
+        "F5",
+        "F7",
+        "M3",
+        "M7"
+      ],
+      "members_display": [
+        "F5(谢梦瑶)",
+        "F7(唐婉清)",
+        "M3(孙子涵)",
+        "M7(郑明轩)"
+      ],
+      "total_score": 5.0,
+      "single_preferences_count": 3,
+      "mutual_preferences_count": 0,
+      "single_preferences": [
+        {
+          "from": "M7",
+          "to": "F7",
+          "from_display": "M7(郑明轩)",
+          "to_display": "F7(唐婉清)"
+        },
+        {
+          "from": "F7",
+          "to": "M3",
+          "from_display": "F7(唐婉清)",
+          "to_display": "M3(孙子涵)"
+        },
+        {
+          "from": "M3",
+          "to": "F5",
+          "from_display": "M3(孙子涵)",
+          "to_display": "F5(谢梦瑶)"
+        }
+      ],
+      "mutual_preferences": []
+    },
+    {
+      "group_id": 4,
+      "members": [
+        "F1",
+        "F3",
+        "M2",
+        "M8"
+      ],
+      "members_display": [
+        "F1(林雨桐)",
+        "F3(高若曦)",
+        "M2(钱宇轩)",
+        "M8(王景辰)"
+      ],
+      "total_score": 8.0,
+      "single_preferences_count": 3,
+      "mutual_preferences_count": 1,
+      "single_preferences": [
+        {
+          "from": "M8",
+          "to": "F3",
+          "from_display": "M8(王景辰)",
+          "to_display": "F3(高若曦)"
+        },
+        {
+          "from": "F1",
+          "to": "M2",
+          "from_display": "F1(林雨桐)",
+          "to_display": "M2(钱宇轩)"
+        },
+        {
+          "from": "F1",
+          "to": "M8",
+          "from_display": "F1(林雨桐)",
+          "to_display": "M8(王景辰)"
+        }
+      ],
+      "mutual_preferences": [
+        {
+          "members": [
+            "F3",
+            "M2"
+          ],
+          "members_display": [
+            "F3(高若曦)",
+            "M2(钱宇轩)"
+          ]
+        }
+      ]
+    },
+    {
+      "group_id": 5,
+      "members": [
+        "F4",
+        "F8",
+        "M1",
+        "M10"
+      ],
+      "members_display": [
+        "F4(梁欣怡)",
+        "F8(韩语彤)",
+        "M1(赵浩然)",
+        "M10(陈奕辰)"
+      ],
+      "total_score": 8.0,
+      "single_preferences_count": 1,
+      "mutual_preferences_count": 2,
+      "single_preferences": [
+        {
+          "from": "M1",
+          "to": "F4",
+          "from_display": "M1(赵浩然)",
+          "to_display": "F4(梁欣怡)"
+        }
+      ],
+      "mutual_preferences": [
+        {
+          "members": [
+            "F8",
+            "M1"
+          ],
+          "members_display": [
+            "F8(韩语彤)",
+            "M1(赵浩然)"
+          ]
+        },
+        {
+          "members": [
+            "F4",
+            "M10"
+          ],
+          "members_display": [
+            "F4(梁欣怡)",
+            "M10(陈奕辰)"
+          ]
+        }
+      ]
+    }
+  ],
+  "privileged_guests": {
+    "privileged_guests": [
+      "F1",
+      "M1"
+    ],
+    "satisfied_count": 2,
+    "satisfaction_rate": 100.0
+  }
+}

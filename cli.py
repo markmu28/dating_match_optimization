@@ -166,7 +166,7 @@ def parse_arguments():
     # 特权嘉宾选项
     parser.add_argument('--privileged-guests',
                        type=str,
-                       help='特权嘉宾列表，用逗号分隔（例如：M1,F3,M5）。特权嘉宾保证分到至少一个自己喜欢的嘉宾同组')
+                       help='特权嘉宾列表，用逗号分隔（例如：M1,F3,M5）。不传则优先读取嘉宾名单中的是否VIP；传入时会与名单VIP合并')
     
     # 输出选项
     parser.add_argument('--export-xlsx',
@@ -746,22 +746,39 @@ def main():
                 print(f"⚠️  当前男女人数不相等（{num_males}:{num_females}），自动放宽2男2女硬约束")
                 effective_two_by_two = False
 
-        # 解析特权嘉宾（支持姓名或ID）
-        privileged_guests = set()
+        # 解析特权嘉宾（名单是否VIP + CLI支持姓名或ID）
+        privileged_raw_ids = set()
+
+        roster_vip_all = {
+            p['guest_id'] for p in guest_profiles
+            if p.get('is_vip', False) and p.get('guest_id') in all_guest_ids_raw
+        }
+        roster_vip_present = roster_vip_all & present_guest_ids_raw
+        roster_vip_absent = roster_vip_all - roster_vip_present
+        if roster_vip_absent:
+            dropped_vip_display = []
+            for guest_id in sorted(roster_vip_absent):
+                guest_name = guest_id_to_name.get(guest_id)
+                dropped_vip_display.append(f"{guest_id}({guest_name})" if guest_name else guest_id)
+            print(f"⚠️  名单VIP中有缺席嘉宾，已忽略: {', '.join(dropped_vip_display)}")
+
+        if roster_vip_present:
+            privileged_raw_ids |= roster_vip_present
+
         if args.privileged_guests:
             raw_privileged_tokens = [g.strip() for g in args.privileged_guests.split(',') if g.strip()]
-            privileged_raw_ids, privileged_parse_warnings = resolve_guest_tokens(
+            cli_privileged_raw_ids, privileged_parse_warnings = resolve_guest_tokens(
                 raw_privileged_tokens, present_guest_ids_raw, name_to_guest_ids
             )
             for warning in privileged_parse_warnings:
                 print(f"⚠️  特权嘉宾解析: {warning}")
+            privileged_raw_ids |= cli_privileged_raw_ids
 
-            privileged_guests = convert_guest_ids_to_internal(privileged_raw_ids, old_to_new_guest_id)
-            
-            if privileged_guests:
-                print_flush(f"🌟 设置特权嘉宾: {', '.join(sorted(privileged_guests))}（共{len(privileged_guests)}人）")
-            else:
-                print("⚠️  未识别到有效的特权嘉宾")
+        privileged_guests = convert_guest_ids_to_internal(privileged_raw_ids, old_to_new_guest_id)
+        if privileged_guests:
+            print_flush(f"🌟 设置特权嘉宾: {', '.join(sorted(privileged_guests))}（共{len(privileged_guests)}人）")
+        elif args.privileged_guests or roster_vip_all:
+            print("⚠️  未识别到有效的特权嘉宾")
         
         # 2. 解析偏好
         if args.mode == 'ranking':
