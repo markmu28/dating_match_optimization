@@ -9,6 +9,8 @@ import argparse
 import sys
 import os
 import time
+import re
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -72,7 +74,7 @@ def parse_arguments():
     parser.add_argument('--mode',
                        choices=['text', 'ranking'],
                        default='ranking',
-                       help='输入数据模式：ranking=排名ID模式（默认），text=中文描述解析')
+                       help='输入数据模式：ranking=ID/姓名混合偏好（默认），text=中文描述解析')
 
     parser.add_argument('--guest-map-file',
                        help='嘉宾名单文件路径（可选，默认使用input文件），用于姓名映射和到场状态')
@@ -243,8 +245,15 @@ def build_guest_ids_from_data(data: List[Dict]) -> Set[str]:
     return guest_ids
 
 
+def normalize_lookup_token(token: str) -> str:
+    """将姓名/别名标准化为可匹配token（中英文统一）"""
+    normalized = unicodedata.normalize('NFKC', str(token).strip())
+    normalized = re.sub(r'\s+', ' ', normalized)
+    return normalized.lower()
+
+
 def build_guest_name_index(guest_profiles: List[Dict]) -> Tuple[Dict[str, str], Dict[str, List[str]]]:
-    """构建 guest_id -> name 和 name -> [guest_id] 索引"""
+    """构建 guest_id -> 主姓名 和 标准化别名 -> [guest_id] 索引"""
     guest_id_to_name = {}
     name_to_guest_ids = {}
     for item in guest_profiles:
@@ -253,8 +262,28 @@ def build_guest_name_index(guest_profiles: List[Dict]) -> Tuple[Dict[str, str], 
         if not guest_id or not guest_name:
             continue
         guest_id_to_name[guest_id] = guest_name
-        name_to_guest_ids.setdefault(guest_name, []).append(guest_id)
-    return guest_id_to_name, name_to_guest_ids
+
+        candidate_tokens = [guest_name]
+        english_name = str(item.get('english_name', '')).strip()
+        if english_name and english_name.lower() != 'nan':
+            candidate_tokens.append(english_name)
+
+        for alias in item.get('aliases', []) or []:
+            alias_str = str(alias).strip()
+            if alias_str:
+                candidate_tokens.append(alias_str)
+
+        for token in candidate_tokens:
+            norm = normalize_lookup_token(token)
+            if not norm:
+                continue
+            name_to_guest_ids.setdefault(norm, set()).add(guest_id)
+
+    normalized_name_index = {
+        key: sorted(list(value))
+        for key, value in name_to_guest_ids.items()
+    }
+    return guest_id_to_name, normalized_name_index
 
 
 def resolve_guest_tokens(raw_tokens: List[str], valid_guest_ids: Set[str], name_to_guest_ids: Dict[str, List[str]]) -> Tuple[Set[str], List[str]]:
@@ -279,7 +308,8 @@ def resolve_guest_tokens(raw_tokens: List[str], valid_guest_ids: Set[str], name_
                 warnings.append(f"未找到嘉宾ID: {token}")
             continue
 
-        candidate_ids = [gid for gid in name_to_guest_ids.get(token, []) if gid in valid_guest_ids]
+        normalized_token = normalize_lookup_token(token)
+        candidate_ids = [gid for gid in name_to_guest_ids.get(normalized_token, []) if gid in valid_guest_ids]
         if len(candidate_ids) == 1:
             resolved.add(candidate_ids[0])
         elif len(candidate_ids) > 1:
@@ -288,6 +318,147 @@ def resolve_guest_tokens(raw_tokens: List[str], valid_guest_ids: Set[str], name_
             warnings.append(f"无法识别嘉宾: {token}")
 
     return resolved, warnings
+
+
+def resolve_preference_target_token(target_raw, subject_gender: str, valid_guest_ids: Set[str],
+                                    name_to_guest_ids: Dict[str, List[str]]) -> Tuple[str, Optional[str]]:
+    """
+    解析ranking偏好列里的目标值，支持ID/数字/中文名/英文名/别名
+    Returns:
+        (resolved_guest_id, warning_message)
+    """
+    if target_raw is None:
+        return '', None
+
+    token = str(target_raw).strip()
+    if not token:
+        return '', None
+
+    token_nfkc = unicodedata.normalize('NFKC', token)
+    id_match = re.match(r'^\s*([mMfF])\s*(\d+)\s*$', token_nfkc)
+    if id_match:
+        candidate = f"{id_match.group(1).upper()}{int(id_match.group(2))}"
+        if candidate in valid_guest_ids:
+            return candidate, None
+        return '', f"未找到目标ID: {token}"
+
+    if re.match(r'^\s*\d+(\.0+)?\s*$', token_nfkc):
+        target_no = int(float(token_nfkc))
+        target_prefix = 'F' if subject_gender == '男' else 'M'
+        candidate = f"{target_prefix}{target_no}"
+        if candidate in valid_guest_ids:
+            return candidate, None
+        return '', f"目标编号超出范围: {token}"
+
+    normalized_token = normalize_lookup_token(token_nfkc)
+    candidate_ids = [gid for gid in name_to_guest_ids.get(normalized_token, []) if gid in valid_guest_ids]
+    if not candidate_ids:
+        return '', f"无法识别偏好目标: {token}"
+
+    expected_prefix = 'F' if subject_gender == '男' else 'M'
+    opposite_gender_ids = [gid for gid in candidate_ids if gid.startswith(expected_prefix)]
+    if len(opposite_gender_ids) == 1:
+        return opposite_gender_ids[0], None
+    if len(opposite_gender_ids) > 1:
+        return '', f"偏好目标重名无法唯一匹配: {token} -> {opposite_gender_ids}"
+
+    if len(candidate_ids) == 1:
+        # 允许先落到唯一ID，后续由parser给出性别不匹配警告
+        return candidate_ids[0], None
+    return '', f"偏好目标重名无法唯一匹配: {token} -> {candidate_ids}"
+
+
+def normalize_ranking_preference_targets(data: List[Dict], valid_guest_ids: Set[str],
+                                         name_to_guest_ids: Dict[str, List[str]]) -> Tuple[List[Dict], List[str]]:
+    """将ranking偏好列中的姓名/别名转换为标准ID，保留无法解析值并给出告警"""
+    warnings = []
+    normalized_data = []
+
+    for idx, row in enumerate(data):
+        new_row = dict(row)
+        subject_gender = str(new_row.get('嘉宾类型', '')).strip()
+        for col in ['对象1ID', '对象2ID']:
+            raw_value = new_row.get(col, '')
+            if raw_value is None or str(raw_value).strip() == '':
+                continue
+
+            resolved_id, warning = resolve_preference_target_token(
+                raw_value, subject_gender, valid_guest_ids, name_to_guest_ids
+            )
+            if resolved_id:
+                new_row[col] = resolved_id
+            elif warning:
+                warnings.append(f"第{idx+1}行 {col}: {warning}")
+        normalized_data.append(new_row)
+
+    return normalized_data, warnings
+
+
+def normalize_ranking_subjects(data: List[Dict], name_to_guest_ids: Dict[str, List[str]]) -> Tuple[List[Dict], List[str]]:
+    """
+    将ranking主体（编号或嘉宾姓名）转换为标准编号。
+    支持主体来源：
+    - 编号列：数字 / M1,F3 / 中文名 / 英文名 / 别名
+    - 可选嘉宾姓名列：中文名 / 英文名 / 别名（优先于编号列）
+    """
+    warnings = []
+    normalized_data = []
+
+    for idx, row in enumerate(data):
+        new_row = dict(row)
+        guest_type = str(new_row.get('嘉宾类型', '')).strip()
+        expected_prefix = 'M' if guest_type == '男' else 'F'
+
+        subject_name_token = str(new_row.get('嘉宾姓名', '')).strip() if new_row.get('嘉宾姓名') is not None else ''
+        subject_no_token = str(new_row.get('编号', '')).strip() if new_row.get('编号') is not None else ''
+        token = subject_name_token if subject_name_token else subject_no_token
+
+        if not token:
+            warnings.append(f"第{idx+1}行 主体为空")
+            normalized_data.append(new_row)
+            continue
+
+        token_nfkc = unicodedata.normalize('NFKC', token)
+
+        # 1) 纯数字
+        if re.match(r'^\s*\d+(\.0+)?\s*$', token_nfkc):
+            new_row['编号'] = int(float(token_nfkc))
+            normalized_data.append(new_row)
+            continue
+
+        # 2) M/F+数字
+        id_match = re.match(r'^\s*([mMfF])\s*(\d+)\s*$', token_nfkc)
+        if id_match:
+            prefix = id_match.group(1).upper()
+            if prefix != expected_prefix:
+                warnings.append(f"第{idx+1}行 主体性别与嘉宾类型不匹配: {token}")
+                normalized_data.append(new_row)
+                continue
+            new_row['编号'] = int(id_match.group(2))
+            normalized_data.append(new_row)
+            continue
+
+        # 3) 中文名/英文名/别名
+        normalized_token = normalize_lookup_token(token_nfkc)
+        candidate_ids = name_to_guest_ids.get(normalized_token, [])
+        if not candidate_ids:
+            warnings.append(f"第{idx+1}行 无法识别主体: {token}")
+            normalized_data.append(new_row)
+            continue
+
+        type_matched = [gid for gid in candidate_ids if gid.startswith(expected_prefix)]
+        if len(type_matched) == 1:
+            new_row['编号'] = int(type_matched[0][1:])
+        elif len(type_matched) > 1:
+            warnings.append(f"第{idx+1}行 主体重名无法唯一匹配: {token} -> {type_matched}")
+        elif len(candidate_ids) == 1:
+            warnings.append(f"第{idx+1}行 主体性别与嘉宾类型不匹配: {token} -> {candidate_ids[0]}")
+        else:
+            warnings.append(f"第{idx+1}行 主体重名无法唯一匹配: {token} -> {candidate_ids}")
+
+        normalized_data.append(new_row)
+
+    return normalized_data, warnings
 
 
 def normalize_ranking_data_for_attendance(data: List[Dict], absent_guest_ids: Set[str]) -> Tuple[List[Dict], Dict[str, str], Dict[str, str], List[str]]:
@@ -465,9 +636,32 @@ def main():
                 print(f"   {warning}")
 
         guest_id_to_name, name_to_guest_ids = build_guest_name_index(guest_profiles)
+
+        # 1.1.5 ranking主体支持姓名/英文名/别名（统一转换为数字编号）
+        if args.mode == 'ranking' and name_to_guest_ids:
+            data, subject_resolve_warnings = normalize_ranking_subjects(data, name_to_guest_ids)
+            if subject_resolve_warnings:
+                print("⚠️  主体嘉宾解析提示:")
+                for warning in subject_resolve_warnings[:10]:
+                    print(f"   {warning}")
+                if len(subject_resolve_warnings) > 10:
+                    print(f"   ... 还有 {len(subject_resolve_warnings) - 10} 条")
+
         all_guest_ids_raw = build_guest_ids_from_data(data)
         if guest_id_to_name:
             print_flush(f"🪪 已加载姓名映射: {len(guest_id_to_name)} 人（来源: {guest_map_file}#{args.guest_map_sheet}）")
+
+        # 1.15 ranking偏好列支持姓名/英文名/别名（统一转换为标准ID）
+        if args.mode == 'ranking' and name_to_guest_ids:
+            data, preference_target_warnings = normalize_ranking_preference_targets(
+                data, all_guest_ids_raw, name_to_guest_ids
+            )
+            if preference_target_warnings:
+                print("⚠️  偏好目标解析提示:")
+                for warning in preference_target_warnings[:10]:
+                    print(f"   {warning}")
+                if len(preference_target_warnings) > 10:
+                    print(f"   ... 还有 {len(preference_target_warnings) - 10} 条")
 
         # 1.2 解析缺席名单（名单中的“是否到场=否” + CLI传入）
         absent_from_roster = {

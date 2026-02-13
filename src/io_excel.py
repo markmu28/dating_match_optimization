@@ -22,6 +22,7 @@ class DataIO:
     def read_ranking_from_excel(self, file_path: str, sheet_name: str = '偏好') -> Tuple[List[Dict], List[str]]:
         """
         从Excel文件读取ranking格式偏好数据（对象1ID, 对象2ID）
+        支持主体“编号”列填写数字、M/F+数字、中文名、英文名、别名
         
         Args:
             file_path: Excel文件路径
@@ -99,8 +100,20 @@ class DataIO:
             if len(df) < original_len:
                 warnings.append(f"删除了 {original_len - len(df)} 个空行")
             
+            # 可选主体姓名列（用于主体按姓名录入）
+            optional_subject_name_col = None
+            for actual in df.columns.tolist():
+                actual_str = str(actual).strip()
+                if actual_str in ('嘉宾姓名', '姓名', 'Name', 'name'):
+                    optional_subject_name_col = actual
+                    break
+
+            selected_columns = expected_columns[:]
+            if optional_subject_name_col and optional_subject_name_col not in selected_columns:
+                selected_columns.append(optional_subject_name_col)
+
             # 转换为字典列表
-            data = df[expected_columns].to_dict('records')
+            data = df[selected_columns].to_dict('records')
             
             # 清理数据
             cleaned_data = []
@@ -113,7 +126,28 @@ class DataIO:
                 # 类型转换
                 try:
                     row['嘉宾类型'] = str(row['嘉宾类型']).strip()
-                    row['编号'] = int(float(row['编号']))  # 支持Excel中的浮点数格式
+
+                    subject_no_raw = row.get('编号')
+                    if pd.isna(subject_no_raw) or str(subject_no_raw).strip() == '':
+                        warnings.append(f"第{i+2}行主体编号为空")
+                        continue
+
+                    subject_no_str = str(subject_no_raw).strip()
+                    if subject_no_str.startswith(('M', 'F')) and subject_no_str[1:].isdigit():
+                        row['编号'] = subject_no_str
+                    else:
+                        try:
+                            row['编号'] = int(float(subject_no_str))  # 支持Excel中的浮点数格式
+                        except (ValueError, TypeError):
+                            # 支持主体用中文名/英文名录入，后续在CLI阶段做映射
+                            row['编号'] = subject_no_str
+
+                    if optional_subject_name_col:
+                        subject_name_value = row.get(optional_subject_name_col, '')
+                        if pd.isna(subject_name_value):
+                            row['嘉宾姓名'] = ''
+                        else:
+                            row['嘉宾姓名'] = str(subject_name_value).strip()
                     
                     # 对象ID可以为空，如果不为空则保持原始格式（数字或参与者ID如M11、F3）
                     for col in ['对象1ID', '对象2ID']:
@@ -262,6 +296,7 @@ class DataIO:
         期望列：
         - 必需：嘉宾类型, 编号, 姓名
         - 可选：是否到场（支持 是/否, true/false, 1/0, Y/N, 出席/缺席）
+        - 可选：英文名, 别名（多个别名可用逗号分隔）
         """
         warnings = []
 
@@ -286,13 +321,20 @@ class DataIO:
 
             expected_required = ['嘉宾类型', '编号', '姓名']
             optional_candidates = ['是否到场', '到场', '出席', '状态']
+            english_name_candidates = ['英文名', 'EnglishName', 'English Name', '英文姓名', '英文']
+            alias_candidates = ['别名', '昵称', 'Alias', 'Aliases', '备用名']
             actual_columns = df.columns.tolist()
+
+            def column_matches(actual_col, candidate_col) -> bool:
+                actual_text = str(actual_col).strip()
+                candidate_text = str(candidate_col).strip()
+                return actual_text == candidate_text or candidate_text in actual_text
 
             column_mapping = {}
             for expected in expected_required:
                 found = False
                 for actual in actual_columns:
-                    if expected in str(actual) or str(actual) in expected:
+                    if column_matches(actual, expected):
                         column_mapping[actual] = expected
                         found = True
                         break
@@ -302,7 +344,7 @@ class DataIO:
             attendance_col = None
             for candidate in optional_candidates:
                 for actual in actual_columns:
-                    if candidate in str(actual) or str(actual) in candidate:
+                    if column_matches(actual, candidate):
                         attendance_col = actual
                         break
                 if attendance_col:
@@ -310,6 +352,28 @@ class DataIO:
 
             if attendance_col:
                 column_mapping[attendance_col] = '是否到场'
+
+            english_name_col = None
+            for candidate in english_name_candidates:
+                for actual in actual_columns:
+                    if column_matches(actual, candidate):
+                        english_name_col = actual
+                        break
+                if english_name_col:
+                    break
+            if english_name_col:
+                column_mapping[english_name_col] = '英文名'
+
+            alias_col = None
+            for candidate in alias_candidates:
+                for actual in actual_columns:
+                    if column_matches(actual, candidate):
+                        alias_col = actual
+                        break
+                if alias_col:
+                    break
+            if alias_col:
+                column_mapping[alias_col] = '别名'
 
             df = df.rename(columns=column_mapping)
             df = df.dropna(how='all')
@@ -342,12 +406,23 @@ class DataIO:
                             is_present = True
                             warnings.append(f"嘉宾名单第{i+2}行: 无法识别到场状态 '{attendance_raw}'，按到场处理")
 
+                    english_name = str(row.get('英文名', '')).strip()
+                    if english_name.lower() == 'nan':
+                        english_name = ''
+                    aliases_raw = str(row.get('别名', '')).strip()
+                    alias_tokens = []
+                    if aliases_raw and aliases_raw.lower() != 'nan':
+                        normalized_aliases = aliases_raw.replace('，', ',').replace('、', ',').replace(';', ',').replace('|', ',')
+                        alias_tokens = [a.strip() for a in normalized_aliases.split(',') if a.strip()]
+
                     guest_id = f"{'M' if guest_type == '男' else 'F'}{guest_no}"
                     result.append({
                         'guest_id': guest_id,
                         'guest_type': guest_type,
                         'guest_no': guest_no,
                         'guest_name': guest_name,
+                        'english_name': english_name,
+                        'aliases': alias_tokens,
                         'is_present': is_present,
                     })
                 except Exception as e:
