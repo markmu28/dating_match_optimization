@@ -33,12 +33,14 @@ class ILPSolver:
         self.num_males = num_males
         self.num_females = num_females
         self.group_size = group_size
-        self.privileged_guests = privileged_guests or set()
+        self.privileged_guests = set(privileged_guests or set())
+        self.ignored_privileged_guests = set()
         
         # 定义人员和组别
         self.males = [f"M{i}" for i in range(1, num_males + 1)]
         self.females = [f"F{i}" for i in range(1, num_females + 1)]
         self.all_persons = self.males + self.females
+        self._sanitize_privileged_guests()
         
         # 计算分组数量
         total_people = num_males + num_females
@@ -47,6 +49,31 @@ class ILPSolver:
         
         # 检查pulp可用性
         self.pulp_available = self._check_pulp()
+
+    def _sanitize_privileged_guests(self) -> None:
+        """
+        过滤无效VIP：
+        - 不在当前人员集合中的ID
+        - 没有任何喜欢对象的VIP（按“忽略而不报错”策略）
+        """
+        if not self.privileged_guests:
+            return
+
+        valid_persons = set(self.all_persons)
+        outgoing_sources = {src for src, dst in self.graph.edges if dst in valid_persons}
+
+        effective = set()
+        ignored = set()
+        for guest in self.privileged_guests:
+            if guest not in valid_persons:
+                ignored.add(guest)
+            elif guest not in outgoing_sources:
+                ignored.add(guest)
+            else:
+                effective.add(guest)
+
+        self.privileged_guests = effective
+        self.ignored_privileged_guests |= ignored
         
     def _check_pulp(self) -> bool:
         """检查pulp库是否可用"""
@@ -94,7 +121,11 @@ class ILPSolver:
             (solution, info): 解决方案和求解信息
         """
         if not self.pulp_available:
-            return None, {"status": "failed", "message": "pulp不可用"}
+            return None, {
+                "status": "failed",
+                "message": "pulp不可用",
+                "ignored_privileged_guests": sorted(self.ignored_privileged_guests)
+            }
         
         try:
             import pulp
@@ -183,12 +214,10 @@ class ILPSolver:
                         if src == privileged_guest and dst in self.all_persons
                     })
 
-                    # 硬约束可行性检查：VIP至少要有一个喜欢对象
+                    # 新策略：若VIP没有喜欢对象，则忽略该VIP约束
                     if not liked_persons:
-                        return None, {
-                            "status": "infeasible",
-                            "message": f"VIP硬约束不可行: {privileged_guest} 没有喜欢对象"
-                        }
+                        self.ignored_privileged_guests.add(privileged_guest)
+                        continue
 
                     # 对每个组强制：若VIP在该组，则组内至少有1个其喜欢的人
                     for group in self.groups:
@@ -223,24 +252,28 @@ class ILPSolver:
                     "status": "optimal",
                     "objective_value": pulp.value(prob.objective),
                     "solve_time": solver.actualSolve,
-                    "solver": "PULP_CBC"
+                    "solver": "PULP_CBC",
+                    "ignored_privileged_guests": sorted(self.ignored_privileged_guests)
                 }
             
             elif status in ['Infeasible', 'Unbounded']:
                 return None, {
                     "status": "infeasible",
-                    "message": f"问题无解: {status}"
+                    "message": f"问题无解: {status}",
+                    "ignored_privileged_guests": sorted(self.ignored_privileged_guests)
                 }
             else:
                 return None, {
                     "status": "timeout_or_error", 
-                    "message": f"求解未完成: {status}"
+                    "message": f"求解未完成: {status}",
+                    "ignored_privileged_guests": sorted(self.ignored_privileged_guests)
                 }
                 
         except Exception as e:
             return None, {
                 "status": "error",
-                "message": f"求解异常: {str(e)}"
+                "message": f"求解异常: {str(e)}",
+                "ignored_privileged_guests": sorted(self.ignored_privileged_guests)
             }
     
     def solve_with_callback(self, callback=None) -> Tuple[Optional[List[List[str]]], Dict]:
@@ -255,6 +288,8 @@ class ILPSolver:
         """
         if callback:
             callback("开始ILP求解...")
+            if self.ignored_privileged_guests:
+                callback(f"⚠️ 以下VIP没有喜欢对象，已自动忽略: {', '.join(sorted(self.ignored_privileged_guests))}")
             
         result = self.solve()
         

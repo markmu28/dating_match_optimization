@@ -320,6 +320,21 @@ def resolve_guest_tokens(raw_tokens: List[str], valid_guest_ids: Set[str], name_
     return resolved, warnings
 
 
+def filter_effective_privileged_guests(privileged_guests: Set[str], edges: Set[Tuple[str, str]]) -> Tuple[Set[str], Set[str]]:
+    """
+    根据偏好边过滤生效VIP：
+    - 生效：至少有一个 outgoing 偏好
+    - 忽略：没有任何喜欢对象
+    """
+    if not privileged_guests:
+        return set(), set()
+
+    outgoing_sources = {src for src, _ in edges}
+    effective = {guest for guest in privileged_guests if guest in outgoing_sources}
+    ignored = set(privileged_guests) - effective
+    return effective, ignored
+
+
 def resolve_preference_target_token(target_raw, subject_gender: str, valid_guest_ids: Set[str],
                                     name_to_guest_ids: Dict[str, List[str]]) -> Tuple[str, Optional[str]]:
     """
@@ -871,6 +886,26 @@ def main():
         print(f"   - 总节点数: {graph_stats['total_nodes']}")
         print(f"   - 互相喜欢对数: {graph_stats['mutual_pairs']}")
         print(f"   - 平均出度: {graph_stats['avg_out_degree']:.1f}")
+
+        ignored_privileged_guests = set()
+        if privileged_guests:
+            effective_privileged_guests, ignored_no_preference_vips = filter_effective_privileged_guests(
+                privileged_guests, graph.edges
+            )
+            if ignored_no_preference_vips:
+                ignored_privileged_guests |= ignored_no_preference_vips
+                ignored_display = []
+                for internal_guest_id in sorted(ignored_no_preference_vips):
+                    old_guest_id = new_to_old_guest_id.get(internal_guest_id, internal_guest_id)
+                    guest_name = guest_id_to_name.get(old_guest_id)
+                    ignored_display.append(f"{internal_guest_id}({guest_name})" if guest_name else internal_guest_id)
+                print("⚠️  以下VIP没有填写喜欢对象，已忽略其VIP硬约束: " + ", ".join(ignored_display))
+
+            privileged_guests = effective_privileged_guests
+            if privileged_guests:
+                print_flush(f"🌟 生效VIP硬约束: {', '.join(sorted(privileged_guests))}（共{len(privileged_guests)}人）")
+            else:
+                print("ℹ️  当前没有可生效的VIP硬约束，将按普通约束继续求解")
         
         # 4. 选择求解器并求解
         solution = None
@@ -975,6 +1010,9 @@ def main():
             solve_info['solver_used'] = 'Heuristic'
         
         solve_time = time.time() - start_time
+        solver_ignored_vips = set(solve_info.get('ignored_privileged_guests', []) or [])
+        if solver_ignored_vips:
+            ignored_privileged_guests |= solver_ignored_vips
         
         # 5. 处理求解结果
         if solution is None:
@@ -987,6 +1025,14 @@ def main():
         
         if args.verbose:
             print(f"求解详情: {solve_info}")
+
+        if ignored_privileged_guests:
+            ignored_display = []
+            for internal_guest_id in sorted(ignored_privileged_guests):
+                old_guest_id = new_to_old_guest_id.get(internal_guest_id, internal_guest_id)
+                guest_name = guest_id_to_name.get(old_guest_id)
+                ignored_display.append(f"{internal_guest_id}({guest_name})" if guest_name else internal_guest_id)
+            print("ℹ️  已忽略无偏好VIP: " + ", ".join(ignored_display))
         
         # 6. 验证分组方案
         is_valid, validation_errors = validate_grouping(solution, effective_two_by_two, args.pairing_mode,
@@ -1073,11 +1119,12 @@ def main():
         
         # 准备特权嘉宾信息
         privileged_info = None
-        if privileged_guests:
+        if privileged_guests or ignored_privileged_guests:
             privileged_info = {
                 "privileged_guests": list(privileged_guests),
                 "satisfied_count": satisfied_count if 'satisfied_count' in locals() else 0,
-                "satisfaction_rate": (satisfied_count/len(privileged_guests)*100) if 'satisfied_count' in locals() and len(privileged_guests) > 0 else 0
+                "satisfaction_rate": (satisfied_count/len(privileged_guests)*100) if 'satisfied_count' in locals() and len(privileged_guests) > 0 else 0,
+                "ignored_no_preference_guests": sorted(list(ignored_privileged_guests))
             }
         
         # 导出JSON

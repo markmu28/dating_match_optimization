@@ -1,234 +1,120 @@
 {
   "meta": {
     "total_groups": 5,
-    "total_score": 30.0,
-    "avg_group_score": 6.0,
-    "total_single_preferences": 11,
-    "total_mutual_preferences": 4,
-    "single_hit_rate": 0.3793103448275862,
-    "mutual_hit_rate": 1.0
+    "total_score": 2.0,
+    "avg_group_score": 0.4,
+    "total_single_preferences": 1,
+    "total_mutual_preferences": 0,
+    "single_hit_rate": 1.0,
+    "mutual_hit_rate": 0.0
   },
   "groups": [
     {
       "group_id": 1,
       "members": [
+        "F1",
         "F2",
-        "F5",
-        "M5",
-        "M7"
+        "M3",
+        "M4"
       ],
       "members_display": [
-        "F2(何诗涵)",
-        "F5(谢梦瑶)",
-        "M5(周嘉铭)",
-        "M7(郑明轩)"
+        "F1(连璐)",
+        "F2(ariel xiao)",
+        "M3(胡永昕)",
+        "M4(刘泽翔)"
       ],
-      "total_score": 6.0,
-      "single_preferences_count": 2,
-      "mutual_preferences_count": 1,
-      "single_preferences": [
-        {
-          "from": "M5",
-          "to": "F2",
-          "from_display": "M5(周嘉铭)",
-          "to_display": "F2(何诗涵)"
-        },
-        {
-          "from": "M7",
-          "to": "F2",
-          "from_display": "M7(郑明轩)",
-          "to_display": "F2(何诗涵)"
-        }
-      ],
-      "mutual_preferences": [
-        {
-          "members": [
-            "F5",
-            "M5"
-          ],
-          "members_display": [
-            "F5(谢梦瑶)",
-            "M5(周嘉铭)"
-          ]
-        }
-      ]
+      "total_score": 0.0,
+      "single_preferences_count": 0,
+      "mutual_preferences_count": 0,
+      "single_preferences": [],
+      "mutual_preferences": []
     },
     {
       "group_id": 2,
       "members": [
-        "F4",
-        "F6",
+        "F10",
+        "F5",
         "M1",
-        "M2"
+        "M7"
       ],
       "members_display": [
-        "F4(梁欣怡)",
-        "F6(宋可欣)",
-        "M1(赵浩然)",
-        "M2(钱宇轩)"
+        "F10(胥夏)",
+        "F5(Yue Lin)",
+        "M1(Chengzhi Peng)",
+        "M7(张延)"
       ],
-      "total_score": 5.0,
-      "single_preferences_count": 2,
-      "mutual_preferences_count": 1,
-      "single_preferences": [
-        {
-          "from": "F6",
-          "to": "M1",
-          "from_display": "F6(宋可欣)",
-          "to_display": "M1(赵浩然)"
-        },
-        {
-          "from": "M1",
-          "to": "F4",
-          "from_display": "M1(赵浩然)",
-          "to_display": "F4(梁欣怡)"
-        }
-      ],
-      "mutual_preferences": [
-        {
-          "members": [
-            "F4",
-            "M2"
-          ],
-          "members_display": [
-            "F4(梁欣怡)",
-            "M2(钱宇轩)"
-          ]
-        }
-      ]
-    },
-    {
-      "group_id": 3,
-      "members": [
-        "F1",
-        "F8",
-        "M6",
-        "M8"
-      ],
-      "members_display": [
-        "F1(林雨桐)",
-        "F8(曹雅楠/原F9)",
-        "M6(吴泽宇)",
-        "M8(王景辰)"
-      ],
-      "total_score": 7.0,
-      "single_preferences_count": 2,
-      "mutual_preferences_count": 1,
-      "single_preferences": [
-        {
-          "from": "M6",
-          "to": "F8",
-          "from_display": "M6(吴泽宇)",
-          "to_display": "F8(曹雅楠/原F9)"
-        },
-        {
-          "from": "F8",
-          "to": "M8",
-          "from_display": "F8(曹雅楠/原F9)",
-          "to_display": "M8(王景辰)"
-        }
-      ],
-      "mutual_preferences": [
-        {
-          "members": [
-            "F1",
-            "M6"
-          ],
-          "members_display": [
-            "F1(林雨桐)",
-            "M6(吴泽宇)"
-          ]
-        }
-      ]
-    },
-    {
-      "group_id": 4,
-      "members": [
-        "F3",
-        "F7",
-        "M4",
-        "M9"
-      ],
-      "members_display": [
-        "F3(高若曦)",
-        "F7(唐婉清)",
-        "M4(李俊熙)",
-        "M9(冯博文)"
-      ],
-      "total_score": 7.0,
-      "single_preferences_count": 4,
+      "total_score": 2.0,
+      "single_preferences_count": 1,
       "mutual_preferences_count": 0,
       "single_preferences": [
         {
-          "from": "M4",
-          "to": "F3",
-          "from_display": "M4(李俊熙)",
-          "to_display": "F3(高若曦)"
-        },
-        {
-          "from": "F7",
-          "to": "M4",
-          "from_display": "F7(唐婉清)",
-          "to_display": "M4(李俊熙)"
-        },
-        {
-          "from": "M9",
-          "to": "F7",
-          "from_display": "M9(冯博文)",
-          "to_display": "F7(唐婉清)"
-        },
-        {
-          "from": "M9",
-          "to": "F3",
-          "from_display": "M9(冯博文)",
-          "to_display": "F3(高若曦)"
+          "from": "M1",
+          "to": "F5",
+          "from_display": "M1(Chengzhi Peng)",
+          "to_display": "F5(Yue Lin)"
         }
       ],
       "mutual_preferences": []
     },
     {
-      "group_id": 5,
+      "group_id": 3,
       "members": [
+        "F8",
         "F9",
-        "M10",
-        "M3"
+        "M8",
+        "M9"
       ],
       "members_display": [
-        "F9(彭思妍/原F10)",
-        "M10(陈奕辰)",
-        "M3(孙子涵)"
+        "F8(Ellen Wan)",
+        "F9(Ye Wang)",
+        "M8(JIN XIE)",
+        "M9(Kevin Shen)"
       ],
-      "total_score": 5.0,
-      "single_preferences_count": 1,
-      "mutual_preferences_count": 1,
-      "single_preferences": [
-        {
-          "from": "F9",
-          "to": "M3",
-          "from_display": "F9(彭思妍/原F10)",
-          "to_display": "M3(孙子涵)"
-        }
+      "total_score": 0.0,
+      "single_preferences_count": 0,
+      "mutual_preferences_count": 0,
+      "single_preferences": [],
+      "mutual_preferences": []
+    },
+    {
+      "group_id": 4,
+      "members": [
+        "F4",
+        "F7",
+        "M5",
+        "M6"
       ],
-      "mutual_preferences": [
-        {
-          "members": [
-            "F9",
-            "M10"
-          ],
-          "members_display": [
-            "F9(彭思妍/原F10)",
-            "M10(陈奕辰)"
-          ]
-        }
-      ]
+      "members_display": [
+        "F4(wanlin zheng)",
+        "F7(April Cheng)",
+        "M5(Steven Lin)",
+        "M6(Yong Yang)"
+      ],
+      "total_score": 0.0,
+      "single_preferences_count": 0,
+      "mutual_preferences_count": 0,
+      "single_preferences": [],
+      "mutual_preferences": []
+    },
+    {
+      "group_id": 5,
+      "members": [
+        "F3",
+        "F6",
+        "M10",
+        "M2"
+      ],
+      "members_display": [
+        "F3(蒲悠儿)",
+        "F6(You Lai)",
+        "M10(沈育嘉)",
+        "M2(汪喆昊)"
+      ],
+      "total_score": 0.0,
+      "single_preferences_count": 0,
+      "mutual_preferences_count": 0,
+      "single_preferences": [],
+      "mutual_preferences": []
     }
-  ],
-  "privileged_guests": {
-    "privileged_guests": [
-      "F1",
-      "M1"
-    ],
-    "satisfied_count": 2,
-    "satisfaction_rate": 100.0
-  }
+  ]
 }

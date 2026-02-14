@@ -13,6 +13,7 @@
 - 支持独立嘉宾名单文件（姓名映射）：`--guest-map-file` / `--guest-map-sheet`
 - 支持现场缺席：`--absent-guests`（姓名和 ID 可混输）
 - 导出 JSON/CSV/Excel（`--export-xlsx`）
+- 提供 Streamlit GUI：名单仅上传，偏好可上传或下拉手填
 
 ## 项目结构
 
@@ -20,6 +21,7 @@
 .
 ├── cli.py
 ├── interactive_gui.py
+├── streamlit_app.py
 ├── requirements.txt
 ├── src/
 │   ├── parser_cn.py
@@ -52,8 +54,14 @@ python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-fi
 
 ### 3) 图形界面
 
-- Windows：双击 `相亲分组工具.bat`
-- macOS/Linux：双击 `相亲分组工具.command`
+- Windows：双击 `相亲分组工具.bat`（启动 Streamlit GUI）
+- macOS/Linux：双击 `相亲分组工具.command`（启动 Streamlit GUI）
+- 如浏览器未自动打开，访问：`http://localhost:8501`
+- GUI 输入规则：
+  - 必须上传嘉宾名单（用于姓名映射、VIP、到场过滤）
+  - 偏好可选“上传 Excel”或“GUI 手动输入”
+  - 手动输入会自动带出嘉宾类型/编号/姓名，`对象1ID/对象2ID` 通过下拉选择
+  - 第二轮必须上传第一轮结果 JSON
 
 ## 输入数据
 
@@ -132,7 +140,7 @@ python3 cli.py --input 嘉宾偏好_第一轮.xlsx --mode ranking --guest-map-fi
 - 第二轮不支持配对模式：`--round-two` 不能与 `--pairing-mode` 同时使用。
 - `text` 模式暂不支持缺席重编号：使用缺席场景请优先 `ranking` 模式。
 - 配对模式可行性：仅支持男女差值 `<= 1`；差值为 `1` 且总人数为奇数时，允许 1 组三人。
-- VIP 硬约束：VIP 必须与至少一个自己喜欢的人同组；若输入偏好本身不可行会直接失败。
+- VIP 硬约束：VIP 必须与至少一个自己喜欢的人同组；若某个VIP未填写喜欢对象，会自动忽略该VIP并继续求解。
 - VIP来源：默认读取 `嘉宾名单` 的 `是否VIP` 列；命令行 `--privileged-guests` 会与名单VIP合并。
 - 偏好主体/目标姓名匹配：支持中文名/英文名/别名；若重名无法唯一匹配会给出告警并按不可识别处理。
 

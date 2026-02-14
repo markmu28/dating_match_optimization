@@ -3,7 +3,7 @@ chcp 65001 > nul
 title 相亲活动分组优化工具
 
 echo ================================================
-echo     相亲活动分组优化工具
+echo     相亲活动分组优化工具 (Streamlit GUI)
 echo     Dating Match Optimization System
 echo ================================================
 echo.
@@ -22,7 +22,7 @@ if errorlevel 1 (
 
 :: 检查依赖
 echo 🔍 检查依赖库...
-python -c "import tkinter, pandas, openpyxl" >nul 2>&1
+python -c "import streamlit, pandas, openpyxl" >nul 2>&1
 if errorlevel 1 (
     echo ⚠️  首次运行检测到缺少必要依赖库
     echo 📦 正在自动安装依赖库...
@@ -43,7 +43,7 @@ if errorlevel 1 (
             echo    1. 打开命令提示符（cmd）
             echo    2. 进入此目录: cd /d "%~dp0"
             echo    3. 运行: pip install -r requirements.txt
-            echo    4. 或者: pip install pandas openpyxl
+            echo    4. 或者: pip install streamlit pandas openpyxl
             echo.
             pause
             exit /b 1
@@ -53,10 +53,10 @@ if errorlevel 1 (
     REM 再次验证安装
     echo.
     echo ✅ 依赖库安装完成，正在验证...
-    python -c "import tkinter, pandas, openpyxl" >nul 2>&1
+    python -c "import streamlit, pandas, openpyxl" >nul 2>&1
     if errorlevel 1 (
         echo ❌ 验证失败，某些依赖库仍然缺失
-        echo 请尝试手动安装: pip install pandas openpyxl
+        echo 请尝试手动安装: pip install streamlit pandas openpyxl
         pause
         exit /b 1
     )
@@ -68,11 +68,12 @@ if errorlevel 1 (
 if not exist "outputs" mkdir outputs
 
 echo ✅ 环境检查完成
-echo 🚀 启动图形界面...
+echo 🚀 启动 Streamlit 图形界面...
+echo 如果浏览器未自动打开，请访问: http://localhost:8501
 echo.
 
-:: 启动GUI程序
-python interactive_gui.py
+:: 启动 Streamlit GUI
+python -m streamlit run streamlit_app.py --server.headless false --browser.gatherUsageStats false
 
 :: 等待用户按键后退出
 echo.

@@ -55,7 +55,8 @@ class HeuristicSolver:
         self.num_males = num_males
         self.num_females = num_females
         self.group_size = group_size
-        self.privileged_guests = privileged_guests or set()
+        self.privileged_guests = set(privileged_guests or set())
+        self.ignored_privileged_guests = set()
         
         # 设置随机种子
         if seed is not None:
@@ -65,6 +66,7 @@ class HeuristicSolver:
         self.males = [f"M{i}" for i in range(1, num_males + 1)]
         self.females = [f"F{i}" for i in range(1, num_females + 1)]
         self.all_persons = self.males + self.females
+        self._sanitize_privileged_guests()
         
         # 计算分组数量
         if pairing_mode:
@@ -73,6 +75,31 @@ class HeuristicSolver:
             total_people = num_males + num_females
             self.num_groups = (total_people + group_size - 1) // group_size  # 向上取整
         self.group_target_sizes = self._calculate_group_target_sizes()
+
+    def _sanitize_privileged_guests(self) -> None:
+        """
+        过滤无效VIP：
+        - 不在当前人员集合中的ID
+        - 没有任何喜欢对象的VIP（按“忽略而不报错”策略）
+        """
+        if not self.privileged_guests:
+            return
+
+        valid_persons = set(self.all_persons)
+        outgoing_sources = {src for src, dst in self.graph.edges if dst in valid_persons}
+
+        effective = set()
+        ignored = set()
+        for guest in self.privileged_guests:
+            if guest not in valid_persons:
+                ignored.add(guest)
+            elif guest not in outgoing_sources:
+                ignored.add(guest)
+            else:
+                effective.add(guest)
+
+        self.privileged_guests = effective
+        self.ignored_privileged_guests |= ignored
 
     def _calculate_group_target_sizes(self) -> List[int]:
         """计算每组目标人数（放宽约束时尽量均匀分配）"""
@@ -493,16 +520,8 @@ class HeuristicSolver:
         检查VIP硬约束是否在输入偏好下可行
         VIP至少要有一个明确喜欢对象，否则问题不可行。
         """
-        infeasible_guests = []
-        if not self.privileged_guests:
-            return True, infeasible_guests
-
-        for privileged_guest in self.privileged_guests:
-            has_liked_person = any(src == privileged_guest for src, _ in self.graph.edges)
-            if not has_liked_person:
-                infeasible_guests.append(privileged_guest)
-
-        return len(infeasible_guests) == 0, infeasible_guests
+        # 新策略：无偏好VIP直接忽略，不再使整体不可行
+        return True, []
 
     def _generate_feasible_initial_solution(self, initial_strategy: str, max_attempts: int = 200) -> Optional[List[List[str]]]:
         """
@@ -782,12 +801,12 @@ class HeuristicSolver:
                     "message": pairing_message
                 }
 
-            vip_feasible, infeasible_vips = self._vip_constraints_feasible()
-            if not vip_feasible:
-                return None, {
-                    "status": "infeasible",
-                    "message": f"VIP硬约束不可行：以下嘉宾没有喜欢对象 {sorted(infeasible_vips)}"
-                }
+            _, infeasible_vips = self._vip_constraints_feasible()
+            if infeasible_vips:
+                self.ignored_privileged_guests |= set(infeasible_vips)
+                self.privileged_guests -= set(infeasible_vips)
+                if callback:
+                    callback(f"⚠️ 以下VIP没有喜欢对象，已自动忽略: {', '.join(sorted(infeasible_vips))}")
 
             for restart in range(num_restarts):
                 if callback:
@@ -851,18 +870,21 @@ class HeuristicSolver:
                     "best_score": best_score,
                     "total_iterations": total_iterations,
                     "num_restarts": num_restarts,
-                    "solve_time": solve_time
+                    "solve_time": solve_time,
+                    "ignored_privileged_guests": sorted(self.ignored_privileged_guests)
                 }
             else:
                 return None, {
                     "status": "no_solution",
-                    "message": "未找到满足VIP硬约束的有效解" if self.privileged_guests else "未找到有效解"
+                    "message": "未找到满足VIP硬约束的有效解" if self.privileged_guests else "未找到有效解",
+                    "ignored_privileged_guests": sorted(self.ignored_privileged_guests)
                 }
                 
         except Exception as e:
             return None, {
                 "status": "error",
-                "message": f"求解异常: {str(e)}"
+                "message": f"求解异常: {str(e)}",
+                "ignored_privileged_guests": sorted(self.ignored_privileged_guests)
             }
 
 
